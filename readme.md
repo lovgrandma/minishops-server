@@ -12,4 +12,4 @@ Allow users to get data from sellers shops\
 Provide embed data for shops embedded on foreign origin websites\
 Process payments securely on the www.minipost.app domain\
 Send users to www.minipost.app to see more shop info if they are clicking from an embed\
-See orders current and completed\
+See orders current and completed
