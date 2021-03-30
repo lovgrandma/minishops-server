@@ -7,8 +7,9 @@ Minishops was created as a seperate node.js application to run alongside the min
 
 The application allows users to:
 
-Publish new products on their shop\
+Do CRUD operations for products on their shop\
 Allow users to get data from sellers shops\
 Provide embed data for shops embedded on foreign origin websites\
 Process payments securely on the www.minipost.app domain\
 Send users to www.minipost.app to see more shop info if they are clicking from an embed\
+See orders current and completed\
