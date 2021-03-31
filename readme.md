@@ -1,9 +1,10 @@
+
 Minishops (server)
 -----------------------------------
 
 Tiny Ecommerce module for www.minipost.app
 
-Minishops was created as a separate node.js application to run alongside the minipost app. This was done considering that minishops is meant to run all throughout the internet on clients business websites. This presents significant security risks which is why the module must be separate
+Minishops was created as a separate node.js application to run alongside the minipost app. This was done considering that minishops is meant to run all throughout the internet on clients business websites. This presents significant security risks which is why the module must be separate from the main application
 
 The application allows users to:
 
