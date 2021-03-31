@@ -10,6 +10,6 @@ const router = require('express').Router();
 
 router.get('/hello', (req, res, next) => {
     return res.json("Hey welcome to minishops")
-})
+});
 
 module.exports = router;

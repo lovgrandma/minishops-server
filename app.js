@@ -5,13 +5,13 @@
  * Copyright (c) 2021 Minipost LLC
  * 
  * The use of this software is hereby explicitly restricted with specific provisions
- * allowed for users who wish to reuse it for commercial profit in their own private
- * endeavor. A complete written license is required by Minipost LLC in order to 
+ * allowed for users with a license who wish to reuse it for commercial profit in their own private
+ * endeavor. A complete written license is required from Minipost LLC in order to 
  * use any copy or form of this software and associated documentation files (the "Software"), 
  * for profit of any kind. 
  * 
- * With explicit restriction, a license allows the use, copy, modification, publish and sale
- * of this software. Please contact admin@minipost.app or contact form at www.minipost.app
+ * With explicit restriction, a license allows the use, copying, modification, publishing and sale
+ * of this software. Please contact admin@minipost.app or use the contact form at www.minipost.app
  * to retrieve a license for this software. Any unpublished, non distributed, not-for-profit,
  * non-commercial use on a single local machine per user is granted.
  * 
