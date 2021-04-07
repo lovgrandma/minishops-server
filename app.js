@@ -58,7 +58,29 @@ const shops = require('./routes/s');
 const { resolveLogging } = require('./scripts/logging.js');
 const s3Cred = require('./routes/api/s3credentials.js');
 
-
+const whitelist = [ 'https://www.minipost.app', 'https://minipost.app', 'www.minipost.app', 'minipost.app', 'http://localhost:3000' ];
+app.use(cors({
+    origin: function(origin, callback) {
+        console.log({origin});
+        if (whitelist.indexOf(origin) !== -1) { // Add function to filter through whitelist files
+            callback(null, true);
+        }    else {
+            callback(new Error("Not allowed"));
+        } 
+    },
+    optionsSuccessStatus: 200,
+    credentials: true
+}));
+app.use(express.json({
+    type: function(req) {
+        if (req.get('content-type')) {
+            return req.get('content-type').indexOf('multipart/form-data') !== 0;
+        } else {
+            return true;
+        }
+    },
+    limit: "50mb" // Set higher body parser limit for size of video objects
+}));
 app.use(express.urlencoded({ extended: false })); // Parse post requests
 
 const mongoOptions = {
@@ -82,7 +104,7 @@ db.on('error', console.error.bind(console, 'connection error:'));
 
 // Add headers. Dont include credentials. Allow all origins for embeds
 app.use(function (req, res, next) {
-    res.setHeader('Access-Control-Allow-Origin', "*"); // Website you wish to allow to connect. 
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin); // Website you wish to allow to connect. 
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE'); // Request methods you wish to allow
     res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept'); // Request headers you wish to allow
     res.setHeader('Access-Control-Allow-Credentials', true); // Set to true if you need the website to include cookies in the requests sent to the API
@@ -93,7 +115,7 @@ app.use(function (req, res, next) {
 // If origin is not listed on db, bad request, else next
 app.use(async function(req, res, next) {
     if (req.body) {
-        if (req.body.shop) {
+        if (req.body.owner) {
             // check if shop record site origins includes -> req.headers.origin.
             // If this is false that means the embed was included on a website that minipost did not approve in its db
             next();
