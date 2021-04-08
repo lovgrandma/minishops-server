@@ -61,10 +61,9 @@ const s3Cred = require('./routes/api/s3credentials.js');
 const whitelist = [ 'https://www.minipost.app', 'https://minipost.app', 'www.minipost.app', 'minipost.app', 'http://localhost:3000' ];
 app.use(cors({
     origin: function(origin, callback) {
-        console.log({origin});
-        if (whitelist.indexOf(origin) !== -1) { // Add function to filter through whitelist files
+        if (whitelist.indexOf(origin) !== -1) { // Add function to filter through foreign whitelist origins 
             callback(null, true);
-        }    else {
+        } else {
             callback(new Error("Not allowed"));
         } 
     },
@@ -125,7 +124,6 @@ app.use(async function(req, res, next) {
     } else {
         return res.json({ error: "No body. Something went wrong", action: "refuse" });
     }
-    next();
 });
 
 app.use('/s/', shops);
@@ -149,7 +147,7 @@ app.use(function(err, req, res, next) {
     console.log(err);
 });
 
-const port = process.env.PORT || s3Cred.app.port;
+const port = s3Cred.app.port;
 server.setTimeout(10*60*1000);
 server.listen(port, () => resolveLogging() ? console.log(`Minishops server started on port ${port}`) : null);
 

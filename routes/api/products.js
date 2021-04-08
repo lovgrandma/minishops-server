@@ -15,13 +15,23 @@ const driver = neo4j.driver(s3Cred.neo.address, neo4j.auth.basic(s3Cred.neo.user
  * 
  * @param {String} owner - The owner of the shop that you want to get from
  * @param {string} filter - The order that products are filtered through 
- * @param {*} append - pagination
+ * @param {number} append - pagination
  */
-const getShopProducts = async function(owner, filter = null, append = 0) {
-    let products = [];
-    return products;
+const getShopDbProducts = async function(owner, filter = null, append = 0) {
+    append += 10;
+    let session = driver.session();
+    let query = "match (a:Shop {owner: $owner })-[r:SELLS]-(b:Product) return a, b limit $append";
+    let params = { owner: owner, append: neo4j.int(append) };
+    return await session.run(query, params)
+        .then(async function(result) {
+            session.close();
+            if (result.records) {
+                return result.records;
+            }
+            return [];
+        });
 }
 
 module.exports = {
-    getShopProducts: getShopProducts
+    getShopDbProducts: getShopDbProducts
 }
