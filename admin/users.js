@@ -10,5 +10,5 @@
  * Products are not on shop, they are individual records connected to shop record
  */
 const createSingleShopAndAttachToAccount = () => {
-    return "create (a:Shop { name: $name, ledger: [], authorized: true, publishDate: $publishDate, description: $description, icon: $icon, origins: [] }) with a match (b:Person {name: $name }) with a, b merge (b)-[r:OWNS]-(a) return a, r, b";
+    return "create (a:Shop { name: $name, ledger: [], authorized: true, publishDate: $publishDate, description: $description, icon: $icon, shippingClasses: [], origins: [] }) with a match (b:Person {name: $name }) with a, b merge (b)-[r:OWNS]-(a) return a, r, b";
 }
