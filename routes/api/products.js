@@ -20,13 +20,17 @@ const driver = neo4j.driver(s3Cred.neo.address, neo4j.auth.basic(s3Cred.neo.user
 const getShopDbProducts = async function(owner, filter = null, append = 0) {
     append += 10;
     let session = driver.session();
-    let query = "match (a:Shop {owner: $owner })-[r:SELLS]-(b:Product) return a, b limit $append";
+    let query = "match (a:Person { name: $owner })-[r:OWNS]-(b:Shop)-[r2:SELLS]-(c:Product) return c limit $append";
     let params = { owner: owner, append: neo4j.int(append) };
     return await session.run(query, params)
         .then(async function(result) {
             session.close();
-            if (result.records) {
-                return result.records;
+            let products = [];
+            let shop = {};
+            if (result) {
+                if (result.records) {
+                    return result.records;
+                }
             }
             return [];
         });
