@@ -79,6 +79,7 @@ const saveOneShippingClassToShop = async (owner, username, data, uuid = null) =>
                 international = data.international;
             }
             const validatedShippingClass = checkShippingClassIntegrity(data);
+            console.log(validatedShippingClass);
             if (validatedShippingClass) { // The passed shipping data has been stripped for extraneous data and is ready to be saved on the db
                 if (!uuid) {
                     uuid = uuidv4().split("-").join(""); // Only needs to be unique to the Shop. Not the database. Shipping classes are only valid to the individual shop // If a uuid doesnt exist, we are probably creating a new shipping class (Probably meaning if we find a name match, we do not treat it as new)
@@ -241,15 +242,16 @@ const checkShippingClassIntegrity = function(shippingClass) {
             } else {
                 return false;
             }
-            if (shippingClass.shippingPrice) {
-                let shippingPrice = null;
-                try {
-                    shippingPrice = parseFloat(shippingClass.shippingPrice);
-                } catch (err) {
-                    return false;
-                }
-                if (typeof shippingPrice == "number" && shippingPrice) {
-                    if (shippingClass.shippingPrice > 0.00) {
+            try {
+                if (typeof parseFloat(shippingClass.shippingPrice) == "number") {
+                    let shippingPrice = null;
+                    try {
+                        shippingPrice = parseFloat(shippingClass.shippingPrice).toFixed(2);
+                    } catch (err) {
+                        return false;
+                    }
+                    // Value should be above -1. Meaning you can ship for free but you cannot put a nonsensical value
+                    if (shippingClass.shippingPrice > -0.01) { 
                         validatedShippingClass.shippingPrice = shippingClass.shippingPrice;
                     } else {
                         return false;
@@ -257,7 +259,7 @@ const checkShippingClassIntegrity = function(shippingClass) {
                 } else {
                     return false;
                 }
-            } else {
+            } catch (err) {
                 return false;
             }
             if (shippingClass.perProduct) {

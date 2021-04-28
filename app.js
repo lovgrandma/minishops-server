@@ -115,28 +115,24 @@ app.use(function (req, res, next) {
 // If origin is not listed on db, bad request, else next
 app.use(async function(req, res, next) {
     if (req.body) {
-        if (req.body.owner) { // owner should contain the value of the owner of the shop being accessed. All protected actions should require an owner or admin variable
-            if (req.body.self) { // if self is true, this is a protected route that will change data on the db. If hacker removes self attribute, internal functions which change data will refuse to run
-                if (!req.body.hash) {
-                    return res.json({ error: "Disauthenticated. User logged out", action: "logout" });
-                } else {
-                    if (req.body.username) {
-                        let authenticated = await security.confirmUsernameHashAuthenticity(req.body.username, req.body.hash);
-                        if (authenticated) {
-                            next();
-                        } else {
-                            return res.json({ error: "Disauthenticated. User logged out", action: "logout" });
-                        }
+        if (req.body.self) { // if self is true, this is a protected route that will change data on the db. If hacker removes self attribute, internal functions which change data will refuse to run anyways
+            if (!req.body.hash) {
+                return res.json({ error: "Disauthenticated. User logged out", action: "logout" });
+            } else {
+                if (req.body.username) {
+                    let authenticated = await security.confirmUsernameHashAuthenticity(req.body.username, req.body.hash);
+                    if (authenticated) {
+                        next();
                     } else {
                         return res.json({ error: "Disauthenticated. User logged out", action: "logout" });
                     }
+                } else {
+                    return res.json({ error: "Disauthenticated. User logged out", action: "logout" });
                 }
-            } else {
-                // check if shop record site origins includes -> req.headers.origin.
-                // If this is false that means the embed was included on a website that minipost did not approve in its db
-                next();
             }
         } else {
+            // check if shop record site origins includes -> req.headers.origin.
+            // If this is false that means the embed was included on a website that minipost did not approve in its db
             next();
         }
     } else {
