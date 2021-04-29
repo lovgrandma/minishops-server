@@ -8,7 +8,6 @@
 
 const router = require('express').Router();
 const product = require('./api/products.js');
-const { getShippingClassesOfShop } = require('./api/shippingclasses.js');
 const shippingClasses = require('./api/shippingclasses.js');
 
 const getShopProducts = async(req, res, next) => {
@@ -60,10 +59,12 @@ const saveShippingClass = async(req, res, next) => {
     }
 };
 
+// Untested
 const getShippingClasses = async(req, res, next) => {
     if (req.body) {
         if (req.body.owner) {
             let data = await shippingClasses.getShippingClassesOfShop(req.body.owner);
+            return res.json({ data: data });
         } else {
             return res.json({ error: "Get shipping classes failed", action: null });
         }
@@ -72,6 +73,23 @@ const getShippingClasses = async(req, res, next) => {
     }
 }
 
+const saveSingleProduct = async(req, res, next) => {
+    if (req.body) {
+        if (req.body.self && req.body.owner && req.body.username && req.body.hash && req.body.product) {
+            let data = await product.saveSingleProductToShop(req.body.owner, req.body.username, req.body.product);
+            console.log(data);
+            return res.json({ data: data });
+        } else {
+            return res.json({ error: "Save single product failed", action: null });
+        }
+    } else {
+        return res.json({ error: "Save single product failed", action: null });
+    }
+}
+
+router.post('/savesingleproducttoshop', (req, res, next) => {
+    return saveSingleProduct(req, res, next);
+})
 router.post('/getshippingclasses', (req, res, next) => {
     return getShippingClasses(req, res, next);
 });
