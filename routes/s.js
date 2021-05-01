@@ -7,8 +7,39 @@
  */
 
 const router = require('express').Router();
+const path = require('path');
+const uuidv4 = require('uuid/v4');
+const multer = require('multer');
 const product = require('./api/products.js');
 const shippingClasses = require('./api/shippingclasses.js');
+
+const uploadSpace = multer({
+    storage: multer.diskStorage({
+        destination: './temp/',
+        filename: function(req, file, cb) {
+            cb( null, uuidv4().split("-").join("") + resolveName(file));
+        }
+    })
+});
+
+/**
+ * Will resolve ending file name to ensure no error
+ * 
+ * @param {{File}} file 
+ * @returns 
+ */
+const resolveName = function(file) {
+    if (file) {
+        if (file.originalname) {
+            if (file.originalname.match(/.([a-zA-Z0-9]*)$/)) {
+                if (file.originalname.match(/.([a-zA-Z0-9]*)$/)[1]) {
+                    return  "." + file.originalname.match(/.([a-zA-Z0-9]*)$/)[1];
+                }
+            }
+        }
+    }
+    return "";
+}
 
 const getShopProducts = async(req, res, next) => {
     let products = [];
@@ -37,7 +68,6 @@ const getShopProducts = async(req, res, next) => {
  * @returns {response} json
  */
 const saveShippingClass = async(req, res, next) => {
-    console.log(req.body);
     if (req.body) {
         // If a hacker doesn't include self and sneaks past the middleware hash check, it doesn't matter because this will fail without req.body.self
         if (req.body.self && req.body.owner && req.body.username && req.body.hash && req.body.goodData) {
@@ -74,22 +104,38 @@ const getShippingClasses = async(req, res, next) => {
 }
 
 const saveSingleProduct = async(req, res, next) => {
-    if (req.body) {
-        if (req.body.self && req.body.owner && req.body.username && req.body.hash && req.body.product) {
-            let data = await product.saveSingleProductToShop(req.body.owner, req.body.username, req.body.product);
-            console.log(data);
-            return res.json({ data: data });
+    try {
+        let files = null;
+        if (req.files) { // Resolve files if files incoming
+            files = req.files;
+        }
+        let imgNames = [];
+        try {
+            if (req.body.imgNames) {
+                imgNames = JSON.parse(req.body.imgNames);
+            }
+        } catch (err) {
+            imgNames = [];
+        }
+        if (req.body) {
+            if (req.body.self && req.body.owner && req.body.username && req.body.hash && req.body.product) {
+                let data = await product.saveSingleProductToShop(req.body.owner, req.body.username, JSON.parse(req.body.product), files, imgNames);
+                return res.json({ data: data });
+            } else {
+                return res.json({ error: "Save single product failed", action: null });
+            }
         } else {
             return res.json({ error: "Save single product failed", action: null });
         }
-    } else {
+    } catch (err) {
         return res.json({ error: "Save single product failed", action: null });
     }
 }
 
-router.post('/savesingleproducttoshop', (req, res, next) => {
+router.post('/savesingleproducttoshop', uploadSpace.array('image', 10), (req, res, next) => {
     return saveSingleProduct(req, res, next);
-})
+});
+
 router.post('/getshippingclasses', (req, res, next) => {
     return getShippingClasses(req, res, next);
 });

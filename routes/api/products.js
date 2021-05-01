@@ -7,6 +7,7 @@
  */
 
 const s3Cred = require('./s3credentials.js');
+const s3Upload = require('./s3upload.js');
 const neo4j = require('neo4j-driver');
 const uuidv4 = require('uuid/v4');
 const driver = neo4j.driver(s3Cred.neo.address, neo4j.auth.basic(s3Cred.neo.username, s3Cred.neo.password));
@@ -35,6 +36,11 @@ const getShopDbProducts = async function(owner, filter = null, append = 0) {
                                 if (record._fields[0]) {
                                     if (record._fields[0].properties) {
                                         record._fields[0].properties.styles = JSON.parse(record._fields[0].properties.styles);
+                                        try {
+                                            record._fields[0].properties.images = JSON.parse(record._fields[0].properties.images); // Use try catch as record may not have images field, but it should
+                                        } catch (err) {
+                                            // fail silently
+                                        }
                                         for (let i = 0; i < record._fields[0].properties.styles[i].length; i++) {
                                             for (let j = 0; j < record._fields[0].properties.styles[i].options.length; j++) {
                                                 record._fields[0].properties.styles[i].options[j].price = parseFloat(record._fields[0].properties.styles[i].options[j].price).toFixed(2); // Parse stored price to valid number
@@ -101,12 +107,12 @@ const validateProduct = function(product) {
         description: "",
         styles: [],
         shipping: [],
+        images: [],
         published: false
     };
-    console.log(product);
     if (product) {
         if (product.hasOwnProperty("id")) {
-            if (product.id != "dummyid" && product.id.length > 0) {
+            if (product.id != "dummyid" && product.id.length > 0) { // confirm that the id is not dummy or null for merge, else new
                 validProduct.id = product.id;
             }
         }
@@ -174,6 +180,12 @@ const validateProduct = function(product) {
                 validProduct.shipping.push(product.shipping[i]);
             }
         }
+        for (let i = 0; i < product.images.length; i++) {
+            validProduct.images[i] = {
+                url: product.images[i].url,
+                name: product.images[i].name
+            }
+        }
         if (product.hasOwnProperty("published")) {
             validProduct.published = product.published;
         }
@@ -191,14 +203,15 @@ const validateProduct = function(product) {
 const createNewProduct = async function(product, owner) {
     try {
         let session = driver.session();
-        let query = "match (a:Person {name: $owner})-[r:OWNS]-(b:Shop) with b create (b)-[r:STOCKS]->(c:Product { id: $id, name: $name, description: $description, styles: $styles, shipping: $shipping, published: $published}) return c"; // Match product by unique product id
+        let query = "match (a:Person {name: $owner})-[r:OWNS]-(b:Shop) with b create (b)-[r:STOCKS]->(c:Product { id: $id, name: $name, description: $description, styles: $styles, shipping: $shipping, images: $images, published: $published}) return c"; // Match product by unique product id
         let id = product.id;
         let name = product.name;
         let description = product.description;
         let styles = JSON.stringify(product.styles);
         let shipping = product.shipping;
         let published = product.published;
-        let params = { id: id, owner: owner, name: name, description: description, styles: styles, shipping: shipping, published: published };
+        let images = JSON.stringify(product.images);
+        let params = { id: id, owner: owner, name: name, description: description, styles: styles, shipping: shipping, images: images, published: published };
         return await session.run(query, params)
             .then(async function(result) {
                 session.close();
@@ -228,14 +241,15 @@ const createNewProduct = async function(product, owner) {
 const mergeExistingProduct = async function(product, owner) {
     try {
         let session = driver.session();
-        let query = "match (a:Person {name: $owner})-[r:OWNS]-(b:Shop)-[r2:STOCKS]-(c:Product {id: $id}) with c set c = { id: $id, name: $name, description: $description, styles: $styles, shipping: $shipping, published: $published} return c";
+        let query = "match (a:Person {name: $owner})-[r:OWNS]-(b:Shop)-[r2:STOCKS]-(c:Product {id: $id}) with c set c = { id: $id, name: $name, description: $description, styles: $styles, shipping: $shipping, images: $images, published: $published} return c";
         let id = product.id;
         let name = product.name;
         let description = product.description;
         let styles = JSON.stringify(product.styles);
         let shipping = product.shipping;
         let published = product.published;
-        let params = { id: id, owner: owner, name: name, description: description, styles: styles, shipping: shipping, published: published };
+        let images = JSON.stringify(product.images);
+        let params = { id: id, owner: owner, name: name, description: description, styles: styles, shipping: shipping, images: images, published: published };
         return await session.run(query, params)
             .then(async function(result) {
                 session.close();
@@ -257,6 +271,24 @@ const mergeExistingProduct = async function(product, owner) {
     }
 }
 
+const resolveNewLocalImages = async function(files, newImgData) {
+    let i = 0;
+    const uploadS3All = files.map(file => {
+        return new Promise((resolve, reject) => {
+            try {
+                resolve(s3Upload.uploadSingle(file, newImgData[i], "minifs-shops-thumbnails", "sh/")); // Will send he file location locally and the name included
+            } catch (err) {
+                reject(null);
+            }
+            i++;
+        });
+    });
+    return Promise.all(uploadS3All)
+        .then((result) => {
+            return result;
+        })
+};
+
 /**
  * Will save or overwrite a product in the database. If id is missing then it will make new, else merge to existing 
  * 
@@ -265,10 +297,13 @@ const mergeExistingProduct = async function(product, owner) {
  * @param {Object} product 
  * @returns {Boolean} Completed or failed
  */
-const saveSingleProductToShop = async function(owner, username, product) {
+const saveSingleProductToShop = async function(owner, username, product, files, newImgData) {
     try {
         let data;
         let validProduct = validateProduct(product);
+        let newImages = await resolveNewLocalImages(files, newImgData);
+        newImages = newImages.filter(img => img != false); // Remove any entities that did not process correctly
+        validProduct.images = validProduct.images.concat(newImages);
         // Check for existing uuid from random generated
         let id;
         if (!validProduct.id) {
@@ -280,9 +315,8 @@ const saveSingleProductToShop = async function(owner, username, product) {
                 if (!common) {
                     i = 0;
                     break;
-                } else {
-                    i--;
                 }
+                i--;
             } while (i > 0);
             if (common) {
                 return false; // Could not find a unique uuid. This is very very very very very very unlikely. 
