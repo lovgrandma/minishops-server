@@ -79,7 +79,7 @@ const compressImg = async(path, ext) => {
             let newLoc = "temp\\" + path.match(/\\([a-zA-Z0-9].*)\./)[1] + "-c." + ext;
             return new Promise((resolve, reject) => {
                 sharp(path)
-                    .resize(350, 550)
+                    .resize(500, 785)
                     .jpeg({ quality: 90 })
                     .toFile(newLoc)
                     .then((data) => { resolve(newLoc);  })

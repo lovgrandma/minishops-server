@@ -132,6 +132,38 @@ const saveSingleProduct = async(req, res, next) => {
     }
 }
 
+/**
+ * Main get product for single product page endpoint
+ * @param {*} req 
+ * @param {*} res 
+ * @param {*} next 
+ * @returns {json}
+ */
+const getSingleProduct = async(req, res, next) => {
+    try {
+        if (req.body.productId) {
+            let recommended = false;
+            let append = 0;
+            if (req.body.recommended) {
+                recommended = true;
+            }
+            if (req.body.append) { // Will always be equal to the current amount of recommendations the user has on page. Function getSingleProductById always adds 20 more videos
+                append = req.body.append;
+            }
+            let data = await product.getSingleProductById(req.body.productId, recommended, append);
+            if (data) {
+                return res.json({ data: data });
+            } else {
+                return res.json({ error: "Get single product failed", action: null });
+            }
+        } else {
+            return res.json({ error: "Get single product failed", action: null });
+        }
+    } catch (err) {
+        return res.json({ error: "Get single product failed", action: null });
+    }
+}
+
 router.post('/savesingleproducttoshop', uploadSpace.array('image', 10), (req, res, next) => {
     return saveSingleProduct(req, res, next);
 });
@@ -147,6 +179,10 @@ router.post('/saveshippingclass', (req, res, next) => {
 router.post('/getshopproducts', (req, res, next) => {
     return getShopProducts(req, res, next);
 });
+
+router.post('/getsingleproductpagedata', (req, res, next) => {
+    return getSingleProduct(req, res, next);
+})
 
 router.get('/hello', (req, res, next) => {
     return res.json("Hey welcome to minishops")

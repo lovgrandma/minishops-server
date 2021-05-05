@@ -62,7 +62,96 @@ const getShopDbProducts = async function(owner, filter = null, append = 0) {
 }
 
 /**
- * Will get single product matched by id name
+ * Will get a single product by id and recommendations if asked
+ * 
+ * @param {String} id 
+ * @param {Boolean} recommended 
+ * @returns {Object || Boolean false}
+ */
+const getSingleProductById = async function(id, recommended = false, append = 0) {
+    try {
+        if (id) {
+            let session = driver.session();
+            let query = "match (a:Product { id: $id}) return a";
+            append += 20; // If append is starting at 0, send 20 products. If append is 100, send back 120 products
+            if (recommended) {
+                query = "match (a:Product { id: $id})-[r:STOCKS]-(b:Shop)-[r2:OWNS]-(c:Person) optional match (a)-[r3:PURCHASED]-(d)-[r4:PURCHASED]-(e) return a, b, e, c limit $append";
+            }
+            console.log(query);
+            let params = { id: id, append: neo4j.int(append) };
+            let data = {
+                shop: {},
+                product: {},
+                recommended: []
+            };
+            return await session.run(query, params)
+                .then((result) => {
+                    console.log(result.records);
+                    if (result.records) {
+                        if (result.records[0]) {
+                            if (result.records[0]._fields) {
+                                if (result.records[0]._fields[1] && result.records[0]._fields[3]) {
+                                    if (result.records[0]._fields[1].properties && result.records[0]._fields[3].properties) {
+                                        try {
+                                            if (result.records[0]._fields[1].properties.shippingClasses) {
+                                                result.records[0]._fields[1].properties.shippingClasses = JSON.parse(result.records[0]._fields[1].properties.shippingClasses);
+                                            }
+                                            data.shop = result.records[0]._fields[1].properties;
+                                            if (result.records[0]._fields[3].properties.name) {
+                                                data.shop.owner = result.records[0]._fields[3].properties.name;
+                                            }
+                                        } catch (err) {
+                                            data.shop = result.records[0]._fields[1].properties;
+                                        }
+                                    }
+                                }
+                                if (result.records[0]._fields[0]) {
+                                    if (result.records[0]._fields[0].properties) {
+                                        try {
+                                            if (result.records[0]._fields[0].properties.images) {
+                                                result.records[0]._fields[0].properties.images = JSON.parse(result.records[0]._fields[0].properties.images);
+                                            }
+                                            if (result.records[0]._fields[0].properties.styles) {
+                                                result.records[0]._fields[0].properties.styles = JSON.parse(result.records[0]._fields[0].properties.styles);
+                                            }
+                                            data.product = result.records[0]._fields[0].properties;
+                                        } catch (err) {
+                                            data.product = {}; // Product data is corrupted
+                                        }
+                                        
+                                    }
+                                }
+                            }
+                        }
+                        // Push recommended
+                        result.records.forEach((record) => {
+                            if (record._fields) {
+                                if (record._fields[2]) {
+                                    if (record._fields[2].properties) {
+                                        data.recommended.push(record._fields[2].properties);
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    console.log(data);
+                    return data;
+                })
+                .catch((err) => {
+                    console.log(err);
+                    return false;
+                });
+        } else {
+            return false;
+        }
+    } catch (err) {
+        console.log(err);
+        return false;
+    }
+}
+
+/**
+ * Will get single product matched by id name. Similar to get single product by id but strictly used to determine truthiness of product record or single values of product
  * 
  * @param {String} id 
  * @returns {Object || Boolean false}
@@ -101,97 +190,101 @@ const findProductById = async function(id) {
  * @returns {Object || Boolean} Completion
  */
 const validateProduct = function(product) {
-    let validProduct = {
-        id: "",
-        name: "",
-        description: "",
-        styles: [],
-        shipping: [],
-        images: [],
-        published: false
-    };
-    if (product) {
-        if (product.hasOwnProperty("id")) {
-            if (product.id != "dummyid" && product.id.length > 0) { // confirm that the id is not dummy or null for merge, else new
-                validProduct.id = product.id;
+    try {
+        let validProduct = {
+            id: "",
+            name: "",
+            description: "",
+            styles: [],
+            shipping: [],
+            images: [],
+            published: false
+        };
+        if (product) {
+            if (product.hasOwnProperty("id")) {
+                if (product.id != "dummyid" && product.id.length > 0) { // confirm that the id is not dummy or null for merge, else new
+                    validProduct.id = product.id;
+                }
             }
-        }
-        if (product.hasOwnProperty("name")) {
-            if (product.name.length > 0) {
-                validProduct.name = product.name;
+            if (product.hasOwnProperty("name")) {
+                if (product.name.length > 0) {
+                    validProduct.name = product.name;
+                } else {
+                    return false;
+                }
             } else {
                 return false;
             }
-        } else {
-            return false;
-        }
-        if (product.hasOwnProperty("description")) {
-            validProduct.description = product.description;
-        }
-        if (Array.isArray(product.styles)) {
-            for (let i = 0; i < product.styles.length; i++) {
-                // Ensure that if there are several styles, they must all be named. If only 1 style then it does not have to be named
-                if (product.styles.length > 1) {
-                    if (product.styles[i].hasOwnProperty("descriptor")) {
-                        if (product.styles[i].descriptor.length < 1) {
-                            return false;
-                        }
-                    } else {
-                        return false;
-                    }
-                }
-                for (let j = 0; j < product.styles[i].options.length; j++) {
-                    if (product.styles[i].options.length > 1) {
-                        if (product.styles[i].options[j].hasOwnProperty("descriptor")) {
-                            if (product.styles[i].options[j].descriptor.length < 1) {
-                                return false;
-                            }
-                            if (typeof product.styles[i].options[j].price !== "number") {
+            if (product.hasOwnProperty("description")) {
+                validProduct.description = product.description;
+            }
+            if (Array.isArray(product.styles)) {
+                for (let i = 0; i < product.styles.length; i++) {
+                    // Ensure that if there are several styles, they must all be named. If only 1 style then it does not have to be named
+                    if (product.styles.length > 1) {
+                        if (product.styles[i].hasOwnProperty("descriptor")) {
+                            if (product.styles[i].descriptor.length < 1) {
                                 return false;
                             }
                         } else {
                             return false;
                         }
                     }
+                    for (let j = 0; j < product.styles[i].options.length; j++) {
+                        if (product.styles[i].options.length > 1) {
+                            if (product.styles[i].options[j].hasOwnProperty("descriptor")) {
+                                if (product.styles[i].options[j].descriptor.length < 1) {
+                                    return false;
+                                }
+                                if (typeof product.styles[i].options[j].price !== "number") {
+                                    return false;
+                                }
+                            } else {
+                                return false;
+                            }
+                        }
+                    }
                 }
             }
-        }
-        let validStyles = [];
-        for (let i = 0; i < product.styles.length; i++) {
-            let thisOptions = [];
-            for (let j = 0; j < product.styles[i].options.length; j++) {
-                thisOptions.push({
-                    descriptor: product.styles[i].options[j].descriptor,
-                    price: product.styles[i].options[j].price,
-                    quantity: product.styles[i].options[j].quantity
+            let validStyles = [];
+            for (let i = 0; i < product.styles.length; i++) {
+                let thisOptions = [];
+                for (let j = 0; j < product.styles[i].options.length; j++) {
+                    thisOptions.push({
+                        descriptor: product.styles[i].options[j].descriptor,
+                        price: Number(parseFloat(product.styles[i].options[j].price).toFixed(2)),
+                        quantity: product.styles[i].options[j].quantity
+                    })
+                }
+                validStyles.push({
+                    descriptor: product.styles[i].descriptor,
+                    options: thisOptions
                 })
             }
-            validStyles.push({
-                descriptor: product.styles[i].descriptor,
-                options: thisOptions
-            })
-        }
-        validProduct.styles = validStyles;
-        if (product.shipping.length < 1) {
-            return false;
-        }
-        for (let i = 0; i < product.shipping.length; i++) {
-            if (typeof product.shipping[i] == "string") {
-                validProduct.shipping.push(product.shipping[i]);
+            validProduct.styles = validStyles;
+            if (product.shipping.length < 1) {
+                return false;
             }
-        }
-        for (let i = 0; i < product.images.length; i++) {
-            validProduct.images[i] = {
-                url: product.images[i].url,
-                name: product.images[i].name
+            for (let i = 0; i < product.shipping.length; i++) {
+                if (typeof product.shipping[i] == "string") {
+                    validProduct.shipping.push(product.shipping[i]);
+                }
             }
+            for (let i = 0; i < product.images.length; i++) {
+                validProduct.images[i] = {
+                    url: product.images[i].url,
+                    name: product.images[i].name
+                }
+            }
+            if (product.hasOwnProperty("published")) {
+                validProduct.published = product.published;
+            }
+            return validProduct;
         }
-        if (product.hasOwnProperty("published")) {
-            validProduct.published = product.published;
-        }
-        return validProduct;
+        return false;
+    } catch (err) {
+        return false;
     }
-    return false;
 }
 
 /**
@@ -347,5 +440,6 @@ const saveSingleProductToShop = async function(owner, username, product, files, 
 
 module.exports = {
     getShopDbProducts: getShopDbProducts,
-    saveSingleProductToShop: saveSingleProductToShop
+    saveSingleProductToShop: saveSingleProductToShop,
+    getSingleProductById: getSingleProductById
 }
