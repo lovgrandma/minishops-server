@@ -77,7 +77,6 @@ const getSingleProductById = async function(id, recommended = false, append = 0)
             if (recommended) {
                 query = "match (a:Product { id: $id})-[r:STOCKS]-(b:Shop)-[r2:OWNS]-(c:Person) optional match (a)-[r3:PURCHASED]-(d)-[r4:PURCHASED]-(e) return a, b, e, c limit $append";
             }
-            console.log(query);
             let params = { id: id, append: neo4j.int(append) };
             let data = {
                 shop: {},

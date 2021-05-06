@@ -97,7 +97,7 @@ const mongoOptions = {
 mongoose.connect(s3Cred.mongo.address, mongoOptions)
     .then(() => resolveLogging() ? console.log('MongoDB Connected') : null)
     .catch(err => console.log(err));
-
+mongoose.set('useCreateIndex', true);
 const db = mongoose.connection;
 //mongo error
 db.on('error', console.error.bind(console, 'connection error:'));

@@ -12,6 +12,8 @@ const uuidv4 = require('uuid/v4');
 const multer = require('multer');
 const product = require('./api/products.js');
 const shippingClasses = require('./api/shippingclasses.js');
+const users = require('./api/users.js');
+const ecommerce = require('./api/ecommerce.js');
 
 const uploadSpace = multer({
     storage: multer.diskStorage({
@@ -164,6 +166,57 @@ const getSingleProduct = async(req, res, next) => {
     }
 }
 
+const saveShippingDataOnUser = async(req, res, next) => {
+    try {
+        if (req.body.self && req.body.shippingData && req.body.username) {
+            let data = await users.saveShippingDataToUserRecord(req.body.username, req.body.shippingData);
+            if (data) {
+                return res.json({ querystatus: "Shipping successfully updated", data: data });
+            } else {
+                return res.json({ error: "Failed to update shipping data"});
+            }
+        } else {
+            return res.json({ error: "Failed to update shipping data"});
+        }
+    } catch (err) {
+        return res.json({ error: "Failed to update shipping data"});
+    }
+}
+
+const fetchUserShippingData = async(req, res, next) => {
+    try {
+        if (req.body.self && req.body.username) {
+            let data = await users.getUserShippingDataFromDb(req.body.username);
+            if (data) {
+                return res.json({ data: data });
+            } else {
+                return res.json({ error: "Failed to get shipping data"});
+            }
+        } else {
+            return res.json({ error: "Failed to get shipping data"});
+        }
+    } catch (err) {
+        return res.json({ error: "Failed to get shipping data"});
+    }
+}
+
+const addOneProductToCart = async(req, res, next) => {
+    try {
+        if (req.body.self && req.body.username && req.body.product) {
+            let data = await users.addOneProductToUserCartDb(req.body.username, req.body.product);
+            if (data) {
+                return res.json({ data: data });
+            } else {
+                return res.json({ error: "Failed to add to cart"});
+            }
+        } else {
+            return res.json({ error: "Failed to add to cart"});
+        }
+    } catch (err) {
+        return res.json({ error: "Failed to add to cart"});
+    }
+}
+
 router.post('/savesingleproducttoshop', uploadSpace.array('image', 10), (req, res, next) => {
     return saveSingleProduct(req, res, next);
 });
@@ -182,7 +235,19 @@ router.post('/getshopproducts', (req, res, next) => {
 
 router.post('/getsingleproductpagedata', (req, res, next) => {
     return getSingleProduct(req, res, next);
-})
+});
+
+router.post('/saveshippingdataonuser', (req, res, next) => {
+    return saveShippingDataOnUser(req, res, next);
+});
+
+router.post('/fetchusershippingdata', (req, res, next) => {
+    return fetchUserShippingData(req, res, next);
+});
+
+router.post('addoneproducttocart', (req, res, next) => {
+    return addOneProductToCart(req, res, next);
+});
 
 router.get('/hello', (req, res, next) => {
     return res.json("Hey welcome to minishops")
