@@ -465,7 +465,7 @@ const filterProductUuidData = (cart) => {
 }
 
 /**
- * Filters uuids from list of products 
+ * Filter uuids from list of products and then get all relevant data to display to user for checkout of a product. This is not valid data as this will be sent to the client for the user to look at. Never use this data to perform checkouts. Only to display info to the user. The server is only interested in validating data as it exists on the server before financial transactions.
  * @param {*} cart 
  * @returns 
  */
