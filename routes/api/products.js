@@ -85,7 +85,6 @@ const getSingleProductById = async function(id, recommended = false, append = 0)
             };
             return await session.run(query, params)
                 .then((result) => {
-                    console.log(result.records);
                     if (result.records) {
                         if (result.records[0]) {
                             if (result.records[0]._fields) {
@@ -123,17 +122,18 @@ const getSingleProductById = async function(id, recommended = false, append = 0)
                             }
                         }
                         // Push recommended
-                        result.records.forEach((record) => {
-                            if (record._fields) {
-                                if (record._fields[2]) {
-                                    if (record._fields[2].properties) {
-                                        data.recommended.push(record._fields[2].properties);
+                        if (recommended) {
+                            result.records.forEach((record) => {
+                                if (record._fields) {
+                                    if (record._fields[2]) {
+                                        if (record._fields[2].properties) {
+                                            data.recommended.push(record._fields[2].properties);
+                                        }
                                     }
                                 }
-                            }
-                        });
+                            });
+                        }
                     }
-                    console.log(data);
                     return data;
                 })
                 .catch((err) => {
@@ -437,8 +437,158 @@ const saveSingleProductToShop = async function(owner, username, product, files, 
     }
 }
 
+const filterProductUuidData = (cart) => {
+    try {
+        if (cart) {
+            if (cart.hasOwnProperty("items")) {
+                let productIds = cart.items.map((product) => {
+                    if (product.hasOwnProperty("uuid")) {
+                        return product.uuid;
+                    } else {
+                        return false;
+                    }
+                });
+                if (productIds) {
+                    return productIds;
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    } catch (err) {
+        return false;
+    }
+}
+
+/**
+ * Filters uuids from list of products 
+ * @param {*} cart 
+ * @returns 
+ */
+const getImagesAndTitlesForCartProductsDb = async(cart) => {
+    try {
+        let productIds = await filterProductUuidData(cart);
+        if (productIds) {
+            // $productIds should look exactly like ["1212", "23123123", "1231312"]. See https://stackoverflow.com/questions/61121568/neo4j-match-on-lists
+            let session = driver.session();
+            let query = "match (a:Product) where a.id in $productIds return a"; // Should get all products with matching ids in organized string array
+            let params = { productIds: productIds };
+            /**
+             * Assigns images from queried records in db to associate matches with provided cart items on items and wishlist.
+             * Each uuid product for product found is put into a hash with its image array saved as the value for the hash
+             * Every time a uuid match is found with images, run setImageAndName to iterate through images and set either name or url depending if you're setting data[i].image url or data[i].style name
+             * @param {*} data 
+             * @param {*} records 
+             * @param {*} hash 
+             * @returns 
+             */
+            function assignImagesAndNames(data, records, hash) {
+                function getImage(imageArr, style) {
+                    let firstValidImage = -1;
+                    for (let i = 0; i < imageArr.length; i++) {
+                        if (imageArr[i].url && firstValidImage == -1) { // Iterate through to find first valid image, return if individual style has no name, style length == 0
+                            firstValidImage = i;
+                            if (style.length == 0) {
+                                return imageArr[firstValidImage].url;
+                            }
+                        }
+                        if (imageArr[i].name.length > 0 && imageArr[i].name == style) { // if match of style name, return matching
+                            return imageArr[i].url;
+                        }
+                    }
+                    if (firstValidImage > -1) { // if no matches and there is a first valid image, return it
+                        return imageArr[firstValidImage].url;
+                    }
+                    return null;
+                }
+                function getPrice(stylesArr, option, style) {
+                    let lowestMatchingPrice = null;
+                    for (let i = 0; i < stylesArr.length; i++) {
+                        for (let j = 0; j < stylesArr[i].options.length; j++) {
+                            if (lowestMatchingPrice == null || stylesArr[i].options[j].price < lowestMatchingPrice) {
+                                lowestMatchingPrice = stylesArr[i].options[j].price;
+                            }
+                            if (option && style) {
+                                if (stylesArr[i].descriptor == style && stylesArr[i].options[j].descriptor == option) {
+                                    return stylesArr[i].options[j].price;
+                                }
+                            }
+                        }
+                    }
+                    return lowestMatchingPrice;
+                }
+                for (let i = 0; i < data.length; i++) {
+                    if (hash.has(data[i].uuid)) {
+                        let dataVal = hash.get(data[i].uuid);
+                        data[i].image = getImage(dataVal.images, data[i].style);
+                        data[i].name = dataVal.name;
+                        data[i].price = getPrice(dataVal.styles, data[i].option, data[i].style);
+                    } else {
+                        for (let j = 0; j < records.length; j++) {
+                            if (records[j]._fields) {
+                                if (records[j]._fields[0]) {
+                                    if (records[j]._fields[0].properties) {
+                                        if (records[j]._fields[0].properties.hasOwnProperty("images") && records[j]._fields[0].properties.hasOwnProperty("name") && records[j]._fields[0].properties.hasOwnProperty("id")) {
+                                            hash.set(data[i].uuid, {
+                                                images: JSON.parse(records[j]._fields[0].properties.images),
+                                                name: records[j]._fields[0].properties.name,
+                                                styles: JSON.parse(records[j]._fields[0].properties.styles)
+                                            });
+                                            if (records[j]._fields[0].properties.id == data[i].uuid) {
+                                                data[i].image = getImage(JSON.parse(records[j]._fields[0].properties.images), data[i].style);
+                                                data[i].name = records[j]._fields[0].properties.name;
+                                                data[i].price = getPrice(JSON.parse(records[j]._fields[0].properties.styles), data[i].option, data[i].style);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                console.log(hash);
+                return data;
+            }
+            return await session.run(query, params)
+                .then((result) => {
+                    let hash = new Map();
+                    if (result) {
+                        if (result.records) {
+                            if (result.records[0]) {
+                                cart.items = assignImagesAndNames(cart.items, result.records, hash);
+                                cart.wishList = assignImagesAndNames(cart.wishList, result.records, hash);
+                                return cart;
+                            }
+                        }
+                    }
+                    return {
+                        error: "Failed to get product data"
+                    }
+                })
+                .catch((err) => {
+                    return {
+                        error: "Failed to get product data"
+                    }
+                })
+        } else {
+            return {
+                error: "Failed to get product data"
+            }
+        }
+    } catch (err) {
+        return {
+            error: "Failed to get product data"
+        }
+    }
+}
+
 module.exports = {
     getShopDbProducts: getShopDbProducts,
     saveSingleProductToShop: saveSingleProductToShop,
-    getSingleProductById: getSingleProductById
+    getSingleProductById: getSingleProductById,
+    getImagesAndTitlesForCartProductsDb: getImagesAndTitlesForCartProductsDb
 }

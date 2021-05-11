@@ -45,7 +45,6 @@ const confirmUsernameHashAuthenticity = async (username, hash) => {
                 if (error) {
                     return reject(false);
                 }
-                console.log({result});
                 if (result) {
                     return resolve(hash);
                 } else {

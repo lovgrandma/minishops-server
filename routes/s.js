@@ -14,6 +14,7 @@ const product = require('./api/products.js');
 const shippingClasses = require('./api/shippingclasses.js');
 const users = require('./api/users.js');
 const ecommerce = require('./api/ecommerce.js');
+const products = require('./api/products.js');
 
 const uploadSpace = multer({
     storage: multer.diskStorage({
@@ -205,15 +206,34 @@ const addOneProductToCart = async(req, res, next) => {
         if (req.body.self && req.body.username && req.body.product) {
             let data = await users.addOneProductToUserCartDb(req.body.username, req.body.product);
             if (data) {
-                return res.json({ data: data });
+                if (data.error) {
+                    return res.json({ data: data, error: data.error });
+                } else {
+                    return res.json({ data: data });
+                }
             } else {
-                return res.json({ error: "Failed to add to cart"});
+                return res.json({ data: {}, error: "Failed to add product to cart" });
             }
         } else {
-            return res.json({ error: "Failed to add to cart"});
+            return res.json({ error: "Failed to add product to cart" });
         }
     } catch (err) {
-        return res.json({ error: "Failed to add to cart"});
+        return res.json({ error: "Failed to add product to cart" });
+    }
+}
+
+const getImagesAndTitlesForCartProducts = async(req, res, next) => {
+    try {
+        if (req.body.hasOwnProperty("cachedCart")) {
+            let data = await products.getImagesAndTitlesForCartProductsDb(req.body.cachedCart);
+            if (data.error) {
+                return res.json({ data: null, error: data.error });
+            } else {
+                return res.json({ data: data });
+            }
+        }
+    } catch (err) {
+        return res.json({ error: "Failed to get product data" });
     }
 }
 
@@ -245,8 +265,12 @@ router.post('/fetchusershippingdata', (req, res, next) => {
     return fetchUserShippingData(req, res, next);
 });
 
-router.post('addoneproducttocart', (req, res, next) => {
+router.post('/addoneproducttocart', (req, res, next) => {
     return addOneProductToCart(req, res, next);
+});
+
+router.post('/getimagesandtitlesforcartproducts', (req, res, next) => {
+    return getImagesAndTitlesForCartProducts(req, res, next);
 });
 
 router.get('/hello', (req, res, next) => {
