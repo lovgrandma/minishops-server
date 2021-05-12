@@ -465,6 +465,134 @@ const filterProductUuidData = (cart) => {
 }
 
 /**
+ * Gets a the valid price or lowest matching for a product. If there is no matching price descriptor, then it must be the first or lowest matching price. Products with more than one style and option must have all styles and options named
+ * @param {*} stylesArr 
+ * @param {*} option 
+ * @param {*} style 
+ * @returns 
+ */
+function getPrice(stylesArr, option, style) {
+    let lowestMatchingPrice = null;
+    for (let i = 0; i < stylesArr.length; i++) {
+        for (let j = 0; j < stylesArr[i].options.length; j++) {
+            if (lowestMatchingPrice == null || stylesArr[i].options[j].price < lowestMatchingPrice) {
+                lowestMatchingPrice = stylesArr[i].options[j].price;
+            }
+            if (option && style) {
+                if (stylesArr[i].descriptor == style && stylesArr[i].options[j].descriptor == option) {
+                    return stylesArr[i].options[j].price;
+                }
+            } else if (option) { // There is only one style and it is not named, but several options
+                if (stylesArr[i].options[j].descriptor == option) {
+                    return stylesArr[i].options[j].price;
+                }
+            }
+        }
+    }
+    return lowestMatchingPrice;
+}
+
+/**
+ * Will get an appropriate image for a product out of all images, matches first valid one and then matches one with matching name to style
+ * @param {Object[]} imageArr 
+ * @param {String || null} style 
+ * @returns {String || null} url
+ */
+function getImage(imageArr, style) {
+    let firstValidImage = -1;
+    for (let i = 0; i < imageArr.length; i++) {
+        if (imageArr[i].url && firstValidImage == -1) { // Iterate through to find first valid image, return if individual style has no name, style length == 0
+            firstValidImage = i;
+            if (style.length == 0) {
+                return imageArr[firstValidImage].url;
+            }
+        }
+        if (imageArr[i].name.length > 0 && imageArr[i].name == style) { // if match of style name, return matching
+            return imageArr[i].url;
+        }
+    }
+    if (firstValidImage > -1) { // if no matches and there is a first valid image, return it
+        return imageArr[firstValidImage].url;
+    }
+    return null;
+}
+
+/**
+ * Assigns images from queried records in db to associate matches with provided cart items on items and wishlist.
+ * Each uuid product for product found is put into a hash with its image array saved as the value for the hash
+ * Every time a uuid match is found with images, run setImageAndName to iterate through images and set either name or url depending if you're setting data[i].image url or data[i].style name
+ * @param {Object[]} data 
+ * @param {Object[]} records 
+ * @param {Map} hash 
+ * @returns {*}
+ */
+function assignImagesNamesPrice(data, records, hash) {
+    for (let i = 0; i < data.length; i++) {
+        if (hash.has(data[i].uuid)) {
+            let dataVal = hash.get(data[i].uuid);
+            data[i].image = getImage(dataVal.images, data[i].style);
+            data[i].name = dataVal.name;
+            data[i].price = getPrice(dataVal.styles, data[i].option, data[i].style);
+        } else {
+            for (let j = 0; j < records.length; j++) {
+                if (records[j]._fields) {
+                    if (records[j]._fields[0]) {
+                        if (records[j]._fields[0].properties) {
+                            if (records[j]._fields[0].properties.hasOwnProperty("images") && records[j]._fields[0].properties.hasOwnProperty("name") && records[j]._fields[0].properties.hasOwnProperty("id")) {
+                                hash.set(data[i].uuid, {
+                                    images: JSON.parse(records[j]._fields[0].properties.images),
+                                    name: records[j]._fields[0].properties.name,
+                                    styles: JSON.parse(records[j]._fields[0].properties.styles)
+                                });
+                                if (records[j]._fields[0].properties.id == data[i].uuid) {
+                                    data[i].image = getImage(JSON.parse(records[j]._fields[0].properties.images), data[i].style);
+                                    data[i].name = records[j]._fields[0].properties.name;
+                                    data[i].price = getPrice(JSON.parse(records[j]._fields[0].properties.styles), data[i].option, data[i].style);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return data;
+}
+/**
+ * Should return the following:
+ * - Calculated shipping data on a per shop basis
+ * - Valid shipping classes that the user may choose from to change shipping
+ * - Calculated product prices
+ * - Checkout total
+ * - If a product in cart has an invalid product, quantity < 1 or does not have shipping class that ships to customer, prevent data return, just return product that needs to be removed from cart
+ * Will be used for determining cart values for user and previous to financial payment to Stripe so data must be secure and valid
+ * 
+ *  @param {Object[]} cart
+ *  @param {Object[]} records
+ *  @param {Map} hash
+ *  @returns {*}
+ */
+const getAllPreCheckoutData = async(cart, records, hash) => {
+    // SHOP HASH Get each distinct shop by uuid and associate properties of shop as object and references to products as array key
+    // { shopName: String, shopOwner: String, products: [...uuid]}
+    let shopHash = new Map();
+    // PER PRODUCT SHIPPING for each shop, go through each product once and get ALL perProduct calculated shipping prices 
+    // ONLY ONCE IF SHIP TOTAL 0 after that, iterate again if price == 0 and get LOWEST onlyOnce shipping price and apply that ONCE for entire shop
+    // FAIL FOR NO MATCHING SHIP CLASS DURING LOOKUP If no matching shipping class for customer country, fail, return product with no matching shipping class alert
+
+    // PRODUCT PRICES individual product prices
+    // SHIPPING TOTAL PER SHOP Store shipping total on a per shop basis
+    // TOTAL CHECKOUT $ Store checkout total for entire cart
+
+    // OTHER ALLOWED SHIPPING CLASSES Include other allowed shipping classes TO users country PER product so user can change shipping class on product
+    // GOOD CC? Check users CC
+    // GOOD PRODUCT QUANTITY? Product stock must be greater or equal to amount user is buying
+    // Stripe check outside of this function
+
+}
+
+
+/**
  * Filter uuids from list of products and then get all relevant data to display to user for checkout of a product. This is not valid data as this will be sent to the client for the user to look at. Never use this data to perform checkouts. Only to display info to the user. The server is only interested in validating data as it exists on the server before financial transactions.
  * @param {*} cart 
  * @returns 
@@ -477,90 +605,22 @@ const getImagesAndTitlesForCartProductsDb = async(cart) => {
             let session = driver.session();
             let query = "match (a:Product) where a.id in $productIds return a"; // Should get all products with matching ids in organized string array
             let params = { productIds: productIds };
-            /**
-             * Assigns images from queried records in db to associate matches with provided cart items on items and wishlist.
-             * Each uuid product for product found is put into a hash with its image array saved as the value for the hash
-             * Every time a uuid match is found with images, run setImageAndName to iterate through images and set either name or url depending if you're setting data[i].image url or data[i].style name
-             * @param {*} data 
-             * @param {*} records 
-             * @param {*} hash 
-             * @returns 
-             */
-            function assignImagesAndNames(data, records, hash) {
-                function getImage(imageArr, style) {
-                    let firstValidImage = -1;
-                    for (let i = 0; i < imageArr.length; i++) {
-                        if (imageArr[i].url && firstValidImage == -1) { // Iterate through to find first valid image, return if individual style has no name, style length == 0
-                            firstValidImage = i;
-                            if (style.length == 0) {
-                                return imageArr[firstValidImage].url;
-                            }
-                        }
-                        if (imageArr[i].name.length > 0 && imageArr[i].name == style) { // if match of style name, return matching
-                            return imageArr[i].url;
-                        }
-                    }
-                    if (firstValidImage > -1) { // if no matches and there is a first valid image, return it
-                        return imageArr[firstValidImage].url;
-                    }
-                    return null;
-                }
-                function getPrice(stylesArr, option, style) {
-                    let lowestMatchingPrice = null;
-                    for (let i = 0; i < stylesArr.length; i++) {
-                        for (let j = 0; j < stylesArr[i].options.length; j++) {
-                            if (lowestMatchingPrice == null || stylesArr[i].options[j].price < lowestMatchingPrice) {
-                                lowestMatchingPrice = stylesArr[i].options[j].price;
-                            }
-                            if (option && style) {
-                                if (stylesArr[i].descriptor == style && stylesArr[i].options[j].descriptor == option) {
-                                    return stylesArr[i].options[j].price;
-                                }
-                            }
-                        }
-                    }
-                    return lowestMatchingPrice;
-                }
-                for (let i = 0; i < data.length; i++) {
-                    if (hash.has(data[i].uuid)) {
-                        let dataVal = hash.get(data[i].uuid);
-                        data[i].image = getImage(dataVal.images, data[i].style);
-                        data[i].name = dataVal.name;
-                        data[i].price = getPrice(dataVal.styles, data[i].option, data[i].style);
-                    } else {
-                        for (let j = 0; j < records.length; j++) {
-                            if (records[j]._fields) {
-                                if (records[j]._fields[0]) {
-                                    if (records[j]._fields[0].properties) {
-                                        if (records[j]._fields[0].properties.hasOwnProperty("images") && records[j]._fields[0].properties.hasOwnProperty("name") && records[j]._fields[0].properties.hasOwnProperty("id")) {
-                                            hash.set(data[i].uuid, {
-                                                images: JSON.parse(records[j]._fields[0].properties.images),
-                                                name: records[j]._fields[0].properties.name,
-                                                styles: JSON.parse(records[j]._fields[0].properties.styles)
-                                            });
-                                            if (records[j]._fields[0].properties.id == data[i].uuid) {
-                                                data[i].image = getImage(JSON.parse(records[j]._fields[0].properties.images), data[i].style);
-                                                data[i].name = records[j]._fields[0].properties.name;
-                                                data[i].price = getPrice(JSON.parse(records[j]._fields[0].properties.styles), data[i].option, data[i].style);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                console.log(hash);
-                return data;
-            }
             return await session.run(query, params)
                 .then((result) => {
                     let hash = new Map();
                     if (result) {
                         if (result.records) {
                             if (result.records[0]) {
-                                cart.items = assignImagesAndNames(cart.items, result.records, hash);
-                                cart.wishList = assignImagesAndNames(cart.wishList, result.records, hash);
+                                cart.items.sort(function(a, b) { // Organize products logically by order of same shop ids
+                                    return a.shopId.localeCompare(b.shopId);
+                                });
+                                cart.items = assignImagesNamesPrice(cart.items, result.records, hash);
+                                cart.wishList = assignImagesNamesPrice(cart.wishList, result.records, hash);
+                                cart.dataRemoved = false; // Advise which product found FIRST with no valid matching shipping class, if false all products good. When logged in app will usually prevent user from adding products to cart without a valid shipping class
+                                cart.itemCartTotal = {
+                                    products: [],
+                                    shipping: null
+                                }; // Prepare item total with selected shipping classes
                                 return cart;
                             }
                         }
@@ -570,6 +630,7 @@ const getImagesAndTitlesForCartProductsDb = async(cart) => {
                     }
                 })
                 .catch((err) => {
+                    console.log(err);
                     return {
                         error: "Failed to get product data"
                     }
