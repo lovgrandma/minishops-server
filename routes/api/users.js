@@ -12,7 +12,7 @@ const neo4j = require('neo4j-driver');
 const driver = neo4j.driver(s3Cred.neo.address, neo4j.auth.basic(s3Cred.neo.username, s3Cred.neo.password));
 const User = require('../../models/user');
 const ecommerce = require('./ecommerce.js');
-const products = require('./products.js');
+const productHandler = require('./product.js');
 
 /**
  * Will take data from user input shipping data and ensure that it is in the right format before submitting to database
@@ -96,7 +96,7 @@ const checkValidShippingClass = async(username, product) => {
                 return "No shipping data on user record";
             }
             let shop = await ecommerce.getSingleShopById(product.shopId);
-            let productData = await products.getSingleProductById(product.id);
+            let productData = await productHandler.getSingleProductById(product.id);
             if (userShippingData.hasOwnProperty("country") && shop.hasOwnProperty("shippingClasses") && productData.hasOwnProperty("product")) {
                 if (JSON.parse(shop.shippingClasses) && productData.product.hasOwnProperty("shipping")) {
                     let shippingClasses = JSON.parse(shop.shippingClasses);
@@ -119,6 +119,7 @@ const checkValidShippingClass = async(username, product) => {
             return false;
         }
     } catch (err) {
+        console.log(err);
         return false;
     }
 }
@@ -197,7 +198,6 @@ const addOneProductAction = async(username, product, validDefaultShippingClass) 
                 .catch((err) => {
                     return false;
                 });
-                console.log(cart);
             if (productDbRecord.styles) {
                 let matchProductQuantity = null;
                 if (productDbRecord.length == 1 && productDbRecord.styles[0].options.length == 1) { // Only one product style and option, check this quantity
@@ -215,7 +215,7 @@ const addOneProductAction = async(username, product, validDefaultShippingClass) 
                 }
                 function pushOneNewProduct() {
                     cart.items.push({
-                        uuid: productDbRecord.id,
+                        uuid: product.id,
                         quantity: 1,
                         style: product.style,
                         option: product.option,
@@ -238,7 +238,8 @@ const addOneProductAction = async(username, product, validDefaultShippingClass) 
                 } else {
                     let match = false;
                     for (let i = 0; i < cart.items.length; i++) {
-                        if (cart.items[i].style == product.style && cart.items[i].option == product.option) {
+                        // If id, style and option the same. It is definitively the same product.
+                        if (cart.items[i].uuid == product.id && cart.items[i].style == product.style && cart.items[i].option == product.option) {
                             match = true;
                             cart.items[i].quantity = cart.items[i].quantity + 1; // Add 1 to quantity
                             if (matchProductQuantity < cart.items[i].quantity) {

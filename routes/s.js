@@ -10,7 +10,7 @@ const router = require('express').Router();
 const path = require('path');
 const uuidv4 = require('uuid/v4');
 const multer = require('multer');
-const product = require('./api/products.js');
+const product = require('./api/product.js');
 const shippingClasses = require('./api/shippingclasses.js');
 const users = require('./api/users.js');
 const ecommerce = require('./api/ecommerce.js');
@@ -45,7 +45,7 @@ const resolveName = function(file) {
 }
 
 const getShopProducts = async(req, res, next) => {
-    let products = [];
+    let productsData = [];
     if (req.body) {
         if (req.body.owner) {
             let filter = null;
@@ -56,10 +56,10 @@ const getShopProducts = async(req, res, next) => {
             if (req.body.append) {
                 append = req.body.append;
             }
-            products = await product.getShopDbProducts(req.body.owner, filter, append);
+            productsData = await products.getShopDbProducts(req.body.owner, filter, append);
         }
     }
-    return res.json({ querystatus: "200", products: products });
+    return res.json({ querystatus: "200", products: productsData });
 }
 
 /**
@@ -122,7 +122,7 @@ const saveSingleProduct = async(req, res, next) => {
         }
         if (req.body) {
             if (req.body.self && req.body.owner && req.body.username && req.body.hash && req.body.product) {
-                let data = await product.saveSingleProductToShop(req.body.owner, req.body.username, JSON.parse(req.body.product), files, imgNames);
+                let data = await products.saveSingleProductToShop(req.body.owner, req.body.username, JSON.parse(req.body.product), files, imgNames);
                 return res.json({ data: data });
             } else {
                 return res.json({ error: "Save single product failed", action: null });
@@ -225,7 +225,11 @@ const addOneProductToCart = async(req, res, next) => {
 const getImagesAndTitlesForCartProducts = async(req, res, next) => {
     try {
         if (req.body.hasOwnProperty("cachedCart")) {
-            let data = await products.getImagesAndTitlesForCartProductsDb(req.body.cachedCart);
+            let username = "";
+            if (req.body.username) {
+                username = req.body.username;
+            }
+            let data = await products.getImagesAndTitlesForCartProductsDb(req.body.cachedCart, username);
             if (data.error) {
                 return res.json({ data: null, error: data.error });
             } else {

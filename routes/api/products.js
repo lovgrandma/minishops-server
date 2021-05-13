@@ -11,6 +11,7 @@ const s3Upload = require('./s3upload.js');
 const neo4j = require('neo4j-driver');
 const uuidv4 = require('uuid/v4');
 const driver = neo4j.driver(s3Cred.neo.address, neo4j.auth.basic(s3Cred.neo.username, s3Cred.neo.password));
+const users = require('./users.js');
 
 /**
  * Retrieves products paginated from the database
@@ -58,94 +59,6 @@ const getShopDbProducts = async function(owner, filter = null, append = 0) {
             });
     } catch (err) {
         return [];
-    }
-}
-
-/**
- * Will get a single product by id and recommendations if asked
- * 
- * @param {String} id 
- * @param {Boolean} recommended 
- * @returns {Object || Boolean false}
- */
-const getSingleProductById = async function(id, recommended = false, append = 0) {
-    try {
-        if (id) {
-            let session = driver.session();
-            let query = "match (a:Product { id: $id}) return a";
-            append += 20; // If append is starting at 0, send 20 products. If append is 100, send back 120 products
-            if (recommended) {
-                query = "match (a:Product { id: $id})-[r:STOCKS]-(b:Shop)-[r2:OWNS]-(c:Person) optional match (a)-[r3:PURCHASED]-(d)-[r4:PURCHASED]-(e) return a, b, e, c limit $append";
-            }
-            let params = { id: id, append: neo4j.int(append) };
-            let data = {
-                shop: {},
-                product: {},
-                recommended: []
-            };
-            return await session.run(query, params)
-                .then((result) => {
-                    if (result.records) {
-                        if (result.records[0]) {
-                            if (result.records[0]._fields) {
-                                if (result.records[0]._fields[1] && result.records[0]._fields[3]) {
-                                    if (result.records[0]._fields[1].properties && result.records[0]._fields[3].properties) {
-                                        try {
-                                            if (result.records[0]._fields[1].properties.shippingClasses) {
-                                                result.records[0]._fields[1].properties.shippingClasses = JSON.parse(result.records[0]._fields[1].properties.shippingClasses);
-                                            }
-                                            data.shop = result.records[0]._fields[1].properties;
-                                            if (result.records[0]._fields[3].properties.name) {
-                                                data.shop.owner = result.records[0]._fields[3].properties.name;
-                                            }
-                                        } catch (err) {
-                                            data.shop = result.records[0]._fields[1].properties;
-                                        }
-                                    }
-                                }
-                                if (result.records[0]._fields[0]) {
-                                    if (result.records[0]._fields[0].properties) {
-                                        try {
-                                            if (result.records[0]._fields[0].properties.images) {
-                                                result.records[0]._fields[0].properties.images = JSON.parse(result.records[0]._fields[0].properties.images);
-                                            }
-                                            if (result.records[0]._fields[0].properties.styles) {
-                                                result.records[0]._fields[0].properties.styles = JSON.parse(result.records[0]._fields[0].properties.styles);
-                                            }
-                                            data.product = result.records[0]._fields[0].properties;
-                                        } catch (err) {
-                                            data.product = {}; // Product data is corrupted
-                                        }
-                                        
-                                    }
-                                }
-                            }
-                        }
-                        // Push recommended
-                        if (recommended) {
-                            result.records.forEach((record) => {
-                                if (record._fields) {
-                                    if (record._fields[2]) {
-                                        if (record._fields[2].properties) {
-                                            data.recommended.push(record._fields[2].properties);
-                                        }
-                                    }
-                                }
-                            });
-                        }
-                    }
-                    return data;
-                })
-                .catch((err) => {
-                    console.log(err);
-                    return false;
-                });
-        } else {
-            return false;
-        }
-    } catch (err) {
-        console.log(err);
-        return false;
     }
 }
 
@@ -539,11 +452,13 @@ function assignImagesNamesPrice(data, records, hash) {
                     if (records[j]._fields[0]) {
                         if (records[j]._fields[0].properties) {
                             if (records[j]._fields[0].properties.hasOwnProperty("images") && records[j]._fields[0].properties.hasOwnProperty("name") && records[j]._fields[0].properties.hasOwnProperty("id")) {
-                                hash.set(data[i].uuid, {
-                                    images: JSON.parse(records[j]._fields[0].properties.images),
-                                    name: records[j]._fields[0].properties.name,
-                                    styles: JSON.parse(records[j]._fields[0].properties.styles)
-                                });
+                                if (!hash.get(data[i].uuid)) { // This is important. Removing this will cause hash data to be overwritten unecessarily and bad name, image and price data to be set on some products
+                                    hash.set(data[i].uuid, {
+                                        images: JSON.parse(records[j]._fields[0].properties.images),
+                                        name: records[j]._fields[0].properties.name,
+                                        styles: JSON.parse(records[j]._fields[0].properties.styles)
+                                    });
+                                }
                                 if (records[j]._fields[0].properties.id == data[i].uuid) {
                                     data[i].image = getImage(JSON.parse(records[j]._fields[0].properties.images), data[i].style);
                                     data[i].name = records[j]._fields[0].properties.name;
@@ -558,46 +473,251 @@ function assignImagesNamesPrice(data, records, hash) {
     }
     return data;
 }
+
+/**
+ * Takes list of shop ids and gets shops by using getShopsByList function
+ * @param {Object[]} cart 
+ * @returns {Object[] || Boolean}
+ */
+async function getShops(shopIds) {
+    let shopData = await getShopsByList(shopIds);
+    if (!shopData || shopData.length == 0) {
+        return false;
+    }
+    return shopData;
+}
+
+/**
+ * Will take an array of shop ids and return all shop records from db
+ * @param {String[]} shop strings
+ * @returns {Object[]} shops
+ */
+const getShopsByList = async(shops) => {
+    try {
+        let session = driver.session();
+        let query = "match (a:Shop) where a.id in $shops return a";
+        let params = { shops: shops };
+        return await session.run(query, params)
+            .then((result) => {
+                let shopData = [];
+                if (result) {
+                    if (result.records) {
+                        for (let i = 0; i < result.records.length; i++) {
+                            if (result.records[i]) {
+                                if (result.records[i]._fields) {
+                                    if (result.records[i]._fields[0]) {
+                                        if (result.records[i]._fields[0].properties) {
+                                            try {
+                                                result.records[i]._fields[0].properties.shippingClasses = JSON.parse(result.records[i]._fields[0].properties.shippingClasses);
+                                            } catch (err) {
+                                                result.records[i]._fields[0].properties.shippingClasses = [];
+                                            }
+                                            shopData.push(result.records[i]._fields[0].properties);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return shopData;
+            })
+            .catch((err) => {
+                return false;
+            });
+    } catch (err) {
+        return false;
+    }
+}
+
 /**
  * Should return the following:
- * - Calculated shipping data on a per shop basis
- * - Valid shipping classes that the user may choose from to change shipping
- * - Calculated product prices
- * - Checkout total
- * - If a product in cart has an invalid product, quantity < 1 or does not have shipping class that ships to customer, prevent data return, just return product that needs to be removed from cart
+ * - PER PRODUCT SHIPPING TOTAL $, PER SHOP SHIPPING TOTAL $ Calculated shipping data on a per shop basis
+ * - OTHER VALID SHIPPING CLASSES TO USER Valid shipping classes that the user may choose from to change shipping, for SHIPPING SELECT DROPDOWN
+ * - PER PRODUCT TOTAL $, TOTAL PER SHOP TOTAL $ Calculated product prices
+ * - TOTAL CHECKOUT $ Checkout total
+ * - If a product in cart does not have shipping class that ships to customer, prevent data return, just return product that needs to be removed from cart
  * Will be used for determining cart values for user and previous to financial payment to Stripe so data must be secure and valid
+ * Only append ONLY ONCE shipping prices if shipping total per shop still at zero after first iteration
+ * If shipping changed, will advise user with changedShippingOnAtleastOne variable
  * 
  *  @param {Object[]} cart
  *  @param {Object[]} records
  *  @param {Map} hash
- *  @returns {*}
+ *  @returns {Object[] || Boolean} Array of objects or falsy result
  */
-const getAllPreCheckoutData = async(cart, records, hash) => {
-    // SHOP HASH Get each distinct shop by uuid and associate properties of shop as object and references to products as array key
-    // { shopName: String, shopOwner: String, products: [...uuid]}
-    let shopHash = new Map();
-    // PER PRODUCT SHIPPING for each shop, go through each product once and get ALL perProduct calculated shipping prices 
-    // ONLY ONCE IF SHIP TOTAL 0 after that, iterate again if price == 0 and get LOWEST onlyOnce shipping price and apply that ONCE for entire shop
-    // FAIL FOR NO MATCHING SHIP CLASS DURING LOOKUP If no matching shipping class for customer country, fail, return product with no matching shipping class alert
-
-    // PRODUCT PRICES individual product prices
-    // SHIPPING TOTAL PER SHOP Store shipping total on a per shop basis
-    // TOTAL CHECKOUT $ Store checkout total for entire cart
-
-    // OTHER ALLOWED SHIPPING CLASSES Include other allowed shipping classes TO users country PER product so user can change shipping class on product
-    // GOOD CC? Check users CC
-    // GOOD PRODUCT QUANTITY? Product stock must be greater or equal to amount user is buying
-    // Stripe check outside of this function
-
+const getAllPreCheckoutData = async(cart, records, hash, username, checkCC) => {
+    try {
+        if (username) {
+            let userShipping = await users.getUserShippingDataFromDb(username);
+            if (userShipping.hasOwnProperty("country")) {
+                let changedShippingOnAtleastOne = false;
+                // SHOP HASH Get each distinct shop by uuid and associate properties of shop as object and references to products as array key
+                // { shopName: String, shopOwner: String, products: [...uuid]}
+                let shopHash = new Map();
+                let shopIds = [];
+                for (let i = 0; i < cart.length; i++) {
+                    if (cart[i].hasOwnProperty("shopId")) {
+                        if (shopIds.indexOf(cart[i].shopId) < 0) {
+                            shopIds.push(cart[i].shopId);
+                        }
+                    }
+                }
+                let shopData = await getShops(shopIds);
+                // This will populate the shopHash with appropriate shopData for fast lookup
+                for (let i = 0; i < shopData.length; i++) {
+                    shopHash.set(shopData[i].id, shopData[i]);
+                }
+                // Will determine how much shipping per product, product totals, total shipping and total product costs per shop and if a shipping class was changed or not
+                function determinePerProductShipping(cart, shopHash, country) {
+                    // Will find all valid shipping classes for product
+                    function AllValidShippingClasses(product, shopHash, country) {
+                        let validShippingClassData = {
+                            country: country, // country that user is receiving product at
+                            classes: [] // supported shipping classes on product to user country
+                        }
+                        if (product.hasOwnProperty("shopId")) {
+                            if (shopHash.has(product.shopId)) { // match shop and look for good shipping class
+                                let tempShop = shopHash.get(product.shopId);
+                                for (let i = 0; i < tempShop.shippingClasses.length; i++) {
+                                    if (tempShop.shippingClasses[i].selectedCountries.indexOf(country) > -1) { // Ships to user country
+                                        if (product.shipping.indexOf(tempShop.shippingClasses[i].uuid) > -1) { // Shipping supported on product
+                                            validShippingClassData.classes.push(tempShop.shippingClasses[i]);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return validShippingClassData;
+                    }
+                    // Will see if the current selected shipping class is valid, if not gets first valid one. If no match will be null
+                    function determineCurrentShippingValidOrAssignNew(cart) {
+                        for (let i = 0; i < cart.length; i++) {
+                            if (cart[i].hasOwnProperty("shippingClass")) {
+                                if (cart[i].shippingClass.hasOwnProperty("shippingRule")) {
+                                    let cachedShippingRule = cart[i].shippingClass.shippingRule;
+                                    cart[i].shippingClass.shippingRule = null; // Make this null, we need to reverify the shipping classes validity
+                                    for (let j = 0; j < cart[i].validShippingClassesForUser.classes.length; j++) {
+                                        if (cachedShippingRule == cart[i].validShippingClassesForUser.classes[j].shippingRule) { // match found good shipping class
+                                            cart[i].shippingClass = {
+                                                shippingRule: cart[i].validShippingClassesForUser.classes[j].shippingRule,
+                                                perProduct: cart[i].validShippingClassesForUser.classes[j].perProduct,
+                                                price: cart[i].validShippingClassesForUser.classes[j].shippingPrice
+                                            };
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // Assign new shipping class since the old once was invalid, did not find valid shipping rule matching users input one
+                        for (let i = 0; i < cart.length; i++) {
+                            if (!cart[i].shippingClass.shippingRule) { // product has no shipping class rule which it shouldnt
+                                if (!changedShippingOnAtleastOne) {
+                                    changedShippingOnAtleastOne = true;
+                                }
+                                if (cart[i].validShippingClassesForUser.classes[0]) {
+                                    cart[i].shippingClass = {
+                                        shippingRule: cart[i].validShippingClassesForUser.classes[0].shippingRule,
+                                        perProduct: cart[i].validShippingClassesForUser.classes[0].perProduct,
+                                        price: cart[i].validShippingClassesForUser.classes[0].shippingPrice
+                                    }
+                                }
+                            }
+                        }
+                        return cart;
+                    }
+                    for (let i = 0; i < cart.length; i++) {
+                        cart[i].validShippingClassesForUser = AllValidShippingClasses(cart[i], shopHash, country); // Gets all valid shipping classes per product
+                    }
+                    cart = determineCurrentShippingValidOrAssignNew(cart); // Assigns a shipping class if the current selected one is invalid
+                    // Will determine totals for shipping and cart products per product and per shop, including onlyOnce rules if no perproduct shipping
+                    shopHash.forEach((value, key) => {
+                        // first check to add all perProduct shipping classes
+                        let temp = shopHash.get(key);
+                        temp.totals = {
+                            totalShipping: 0,
+                            totalProductCosts: 0
+                        }
+                        // Calculate the shipping for all shipping classes calculated on a per product basis
+                        for (let i = 0; i < cart.length; i++) {
+                            if (cart[i].hasOwnProperty("shopId")) {
+                                if (cart[i].hasOwnProperty("shippingClass") && cart[i].shopId == key) {
+                                    if (cart[i].shippingClass.perProduct) {
+                                        temp.totals.totalShipping = temp.totals.totalShipping + (cart[i].shippingClass.price * cart[i].quantity);
+                                    }
+                                }
+                            }
+                        }
+                        // // second check to add 1 (cheapest) onlyOnce shipping class, if shipping value is at 0
+                        let cheapest = 0;
+                        for (let i = 0; i < cart.length; i++) {
+                            if (cart[i].hasOwnProperty("shopId")) {
+                                if (cart[i].hasOwnProperty("shippingClass") && cart[i].shopId == key) {
+                                    temp.totals.totalProductCosts = temp.totals.totalProductCosts + (cart[i].price * cart[i].quantity);
+                                    cart[i].calculatedShipping = cart[i].shippingClass.perProduct ?
+                                        cart[i].shippingClass.price * cart[i].quantity
+                                        : 0;
+                                    cart[i].calculatedTotal = cart[i].price * cart[i].quantity;
+                                    if (!cart[i].shippingClass.perProduct) {
+                                        if (temp.totals.totalShipping == 0) {
+                                            if (cheapest == 0 && cart[i].shippingClass.price > 0 || cart[i].shippingClass.price < cheapest) {
+                                                cheapest = cart[i].shippingClass.price;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // If no perProduct shipping and all onlyOnce, total shipping should be 0 and we will only count the onlyOnce shipping on the total
+                        if (temp.totals.totalShipping == 0) {
+                            temp.totals.totalShipping = cheapest;
+                        }
+                        temp.totals.totalShipping = parseFloat(temp.totals.totalShipping).toFixed(2);
+                        temp.totals.totalProductCosts = parseFloat(temp.totals.totalProductCosts).toFixed(2);
+                        shopHash.set(key, temp);
+                    });
+                    return cart, shopHash;
+                }
+                cart, shopHash = determinePerProductShipping(cart, shopHash, userShipping.country);
+                let shopArr = [];
+                let totals = {
+                    shipping: 0,
+                    products: 0,
+                    total: 0
+                }
+                shopHash.forEach((value, key) => {
+                    let temp = shopHash.get(key);
+                    totals.shipping = totals.shipping + parseFloat(temp.totals.totalShipping);
+                    totals.products = totals.products + parseFloat(temp.totals.totalProductCosts);
+                    shopArr.push(temp);
+                });
+                totals.total = totals.shipping + totals.products;
+                totals.shipping = parseFloat(totals.shipping).toFixed(2);
+                totals.products = parseFloat(totals.products).toFixed(2);
+                totals.total = parseFloat(totals.total).toFixed(2);
+                return {
+                    cart: cart,
+                    shop: shopArr,
+                    totals: totals,
+                    changedShippingOnAtleastOne: changedShippingOnAtleastOne
+                }
+                
+                // GOOD CC? Check users CC
+                // GOOD PRODUCT QUANTITY? Product stock must be greater or equal to amount user is buying
+            }
+        }
+        return false;
+    } catch (err) {
+        return false;
+    }
 }
-
 
 /**
  * Filter uuids from list of products and then get all relevant data to display to user for checkout of a product. This is not valid data as this will be sent to the client for the user to look at. Never use this data to perform checkouts. Only to display info to the user. The server is only interested in validating data as it exists on the server before financial transactions.
  * @param {*} cart 
  * @returns 
  */
-const getImagesAndTitlesForCartProductsDb = async(cart) => {
+const getImagesAndTitlesForCartProductsDb = async(cart, username, checkCC = false) => {
     try {
         let productIds = await filterProductUuidData(cart);
         if (productIds) {
@@ -606,7 +726,7 @@ const getImagesAndTitlesForCartProductsDb = async(cart) => {
             let query = "match (a:Product) where a.id in $productIds return a"; // Should get all products with matching ids in organized string array
             let params = { productIds: productIds };
             return await session.run(query, params)
-                .then((result) => {
+                .then( async (result) => {
                     let hash = new Map();
                     if (result) {
                         if (result.records) {
@@ -614,13 +734,16 @@ const getImagesAndTitlesForCartProductsDb = async(cart) => {
                                 cart.items.sort(function(a, b) { // Organize products logically by order of same shop ids
                                     return a.shopId.localeCompare(b.shopId);
                                 });
+                                cart.items.forEach((item, index) => { // Add supported shipping on each product, to filter what shipping classes can be used on each
+                                    for (let i = 0; i < result.records.length; i++) {
+                                        if (item.uuid == result.records[i]._fields[0].properties.id) {
+                                            cart.items[index].shipping = result.records[i]._fields[0].properties.shipping;
+                                        }
+                                    }
+                                });
                                 cart.items = assignImagesNamesPrice(cart.items, result.records, hash);
                                 cart.wishList = assignImagesNamesPrice(cart.wishList, result.records, hash);
-                                cart.dataRemoved = false; // Advise which product found FIRST with no valid matching shipping class, if false all products good. When logged in app will usually prevent user from adding products to cart without a valid shipping class
-                                cart.itemCartTotal = {
-                                    products: [],
-                                    shipping: null
-                                }; // Prepare item total with selected shipping classes
+                                cart.checkoutTruths = await getAllPreCheckoutData(cart.items, result.records, hash, username, checkCC); // if false, get preCheckout failed, dont provide pre checkout shipping/total data
                                 return cart;
                             }
                         }
@@ -650,6 +773,5 @@ const getImagesAndTitlesForCartProductsDb = async(cart) => {
 module.exports = {
     getShopDbProducts: getShopDbProducts,
     saveSingleProductToShop: saveSingleProductToShop,
-    getSingleProductById: getSingleProductById,
     getImagesAndTitlesForCartProductsDb: getImagesAndTitlesForCartProductsDb
 }
