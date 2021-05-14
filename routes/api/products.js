@@ -12,6 +12,7 @@ const neo4j = require('neo4j-driver');
 const uuidv4 = require('uuid/v4');
 const driver = neo4j.driver(s3Cred.neo.address, neo4j.auth.basic(s3Cred.neo.username, s3Cred.neo.password));
 const users = require('./users.js');
+const ecommerce = require('./ecommerce.js');
 
 /**
  * Retrieves products paginated from the database
@@ -268,7 +269,6 @@ const mergeExistingProduct = async function(product, owner) {
                 return false;
             })
             .catch((err) => {
-                console.log(err);
                 return false;
             })
     } catch (err) {
@@ -345,7 +345,6 @@ const saveSingleProductToShop = async function(owner, username, product, files, 
             return false;
         }
     } catch (err) {
-        console.log(err);
         return false;
     }
 }
@@ -440,7 +439,7 @@ function getImage(imageArr, style) {
  * @returns {*}
  */
 function assignImagesNamesPrice(data, records, hash) {
-    for (let i = 0; i < data.length; i++) {
+     for (let i = 0; i < data.length; i++) {
         if (hash.has(data[i].uuid)) {
             let dataVal = hash.get(data[i].uuid);
             data[i].image = getImage(dataVal.images, data[i].style);
@@ -453,7 +452,7 @@ function assignImagesNamesPrice(data, records, hash) {
                         if (records[j]._fields[0].properties) {
                             if (records[j]._fields[0].properties.hasOwnProperty("images") && records[j]._fields[0].properties.hasOwnProperty("name") && records[j]._fields[0].properties.hasOwnProperty("id")) {
                                 if (!hash.get(data[i].uuid)) { // This is important. Removing this will cause hash data to be overwritten unecessarily and bad name, image and price data to be set on some products
-                                    hash.set(data[i].uuid, {
+                                    hash.set(records[j]._fields[0].properties.id, { // Match by same record
                                         images: JSON.parse(records[j]._fields[0].properties.images),
                                         name: records[j]._fields[0].properties.name,
                                         styles: JSON.parse(records[j]._fields[0].properties.styles)
@@ -695,11 +694,17 @@ const getAllPreCheckoutData = async(cart, records, hash, username, checkCC) => {
                 totals.shipping = parseFloat(totals.shipping).toFixed(2);
                 totals.products = parseFloat(totals.products).toFixed(2);
                 totals.total = parseFloat(totals.total).toFixed(2);
-                return {
-                    cart: cart,
-                    shop: shopArr,
-                    totals: totals,
-                    changedShippingOnAtleastOne: changedShippingOnAtleastOne
+                if (!checkCC) {
+                    return {
+                        cart: cart,
+                        shop: shopArr,
+                        totals: totals,
+                        changedShippingOnAtleastOne: changedShippingOnAtleastOne
+                    }
+                } else {
+                    // get good Stripe CC data on user acc , will chekc their mongoDB and then check customer acc for valid CC
+                    // Check good product quantity on ALL products
+                    // Check valid receiving Stripe account for shop
                 }
                 
                 // GOOD CC? Check users CC
@@ -717,8 +722,11 @@ const getAllPreCheckoutData = async(cart, records, hash, username, checkCC) => {
  * @param {*} cart 
  * @returns 
  */
-const getImagesAndTitlesForCartProductsDb = async(cart, username, checkCC = false) => {
+const getImagesAndTitlesForCartProductsDb = async(cart, username, checkCC = false, getNewCart = false) => {
     try {
+        if (getNewCart) {
+            cart = await ecommerce.getCart(username);
+        }
         let productIds = await filterProductUuidData(cart);
         if (productIds) {
             // $productIds should look exactly like ["1212", "23123123", "1231312"]. See https://stackoverflow.com/questions/61121568/neo4j-match-on-lists
@@ -742,8 +750,14 @@ const getImagesAndTitlesForCartProductsDb = async(cart, username, checkCC = fals
                                     }
                                 });
                                 cart.items = assignImagesNamesPrice(cart.items, result.records, hash);
-                                cart.wishList = assignImagesNamesPrice(cart.wishList, result.records, hash);
+                                if (cart.wishList) {
+                                    cart.wishList = assignImagesNamesPrice(cart.wishList, result.records, hash);
+                                }
                                 cart.checkoutTruths = await getAllPreCheckoutData(cart.items, result.records, hash, username, checkCC); // if false, get preCheckout failed, dont provide pre checkout shipping/total data
+                                return cart;
+                            } else {
+                                // No products matched because the cart is empty
+                                cart.checkoutTruths = {};
                                 return cart;
                             }
                         }
@@ -753,7 +767,6 @@ const getImagesAndTitlesForCartProductsDb = async(cart, username, checkCC = fals
                     }
                 })
                 .catch((err) => {
-                    console.log(err);
                     return {
                         error: "Failed to get product data"
                     }
@@ -770,8 +783,111 @@ const getImagesAndTitlesForCartProductsDb = async(cart, username, checkCC = fals
     }
 }
 
+const changeShippingClass = async(username, productData, newShippingRule) => {
+    try {
+        if (productData.uuid) {
+            let session = driver.session();
+            let query = "match (a:Product { id: $id })-[r:STOCKS]-(b:Shop) return a, b";
+            let params = { id: productData.uuid };
+            return await session.run(query, params)
+                .then( async (result) => {
+                    session.close();
+                    let validatedClasses = JSON.parse(result.records[0]._fields[1].properties.shippingClasses);
+                    let supportedOnProduct = result.records[0]._fields[0].properties.shipping;
+                    let userShipping = await users.getUserShippingDataFromDb(username);
+                    if (userShipping.country) {
+                        let shippingToSet = null;
+                        for (let i = 0; i < validatedClasses.length; i++) {
+                            if (newShippingRule == validatedClasses[i].shippingRule && supportedOnProduct.indexOf(validatedClasses[i].uuid) > -1 && validatedClasses[i].selectedCountries.indexOf(userShipping.country) > -1) { // Found new shipping rule in valid shop shipping classes, specific product supports new selected shipping class and user country is supported
+                                shippingToSet = {
+                                    shippingRule: validatedClasses[i].shippingRule,
+                                    perProduct: validatedClasses[i].perProduct
+                                }
+                            }
+                        }
+                        if (shippingToSet) {
+                            let session2 = driver.session();
+                            query = "match (a:Person { name: $username }) return a";
+                            params = { username: username };
+                            return await session2.run(query, params)
+                                .then( async (result) => {
+                                    session2.close();
+                                    let cart = JSON.parse(result.records[0]._fields[0].properties.cart);
+                                    for (let i = 0; i < cart.items.length; i++) {
+                                        if (cart.items[i].uuid == productData.uuid && cart.items[i].style == productData.style && cart.items[i].option == productData.option) {
+                                            cart.items[i].shippingClass = shippingToSet;
+                                            break;
+                                        }
+                                    }
+                                    cart = JSON.stringify(cart);
+                                    let session3 = driver.session();
+                                    query = "match (a:Person { name: $username }) set a.cart = $cart return a";
+                                    params = { username: username, cart: cart };
+                                    return await session3.run(query, params)
+                                        .then((result) => {
+                                            session3.close();
+                                            return {
+                                                data: JSON.parse(result.records[0]._fields[0].properties.cart),
+                                                error: "",
+                                                success: true
+                                            }
+                                        })
+                                        .catch(() => {
+                                            return {
+                                                data: null,
+                                                error: "failed to update shipping class",
+                                                success: false
+                                            }
+                                        })
+                                })
+                                .catch((err) => {
+                                    return {
+                                        data: null,
+                                        error: "failed to update shipping class",
+                                        success: false
+                                    }
+                                })
+                        } else {
+                            return {
+                                data: null,
+                                error: "failed to update shipping class",
+                                success: false
+                            }
+                        }
+                    } else {
+                        return {
+                            data: null,
+                            error: "failed to update shipping class",
+                            success: false
+                        }
+                    }
+                })
+                .catch((err) => {
+                    return {
+                        data: null,
+                        error: "failed to update shipping class",
+                        success: false
+                    }
+                });
+        } else {
+            return {
+                data: null,
+                error: "failed to update shipping class",
+                success: false
+            }
+        }
+    } catch (err) {
+        return {
+            data: null,
+            error: "failed to update shipping class",
+            success: false
+        }
+    }
+}
+
 module.exports = {
     getShopDbProducts: getShopDbProducts,
     saveSingleProductToShop: saveSingleProductToShop,
-    getImagesAndTitlesForCartProductsDb: getImagesAndTitlesForCartProductsDb
+    getImagesAndTitlesForCartProductsDb: getImagesAndTitlesForCartProductsDb,
+    changeShippingClass: changeShippingClass
 }

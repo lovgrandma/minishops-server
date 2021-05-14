@@ -42,6 +42,40 @@ const getSingleShopById = async(id) => {
     }
 }
 
+/**
+ * Gets single cart from user record
+ * 
+ * @param {String} username 
+ * @returns {Object || Boolean}
+ */
+const getCart = async(username) => {
+    try {
+        if (username) {
+            let session = driver.session();
+            let query = "match (a:Person { name: $username }) return a";
+            let params = { username: username };
+            return await session.run(query, params)
+                .then((result) => {
+                    session.close();
+                    if (result.records[0]._fields[0].properties.cart) {
+                        try { 
+                            return JSON.parse(result.records[0]._fields[0].properties.cart);
+                        } catch (err) {
+                            return false;
+                        }
+                    }
+                    return false;
+                })
+                .catch((err) => {
+                    return false;
+                })
+        }
+    } catch (err) {
+        return false;
+    }
+}
+
 module.exports = {
-    getSingleShopById: getSingleShopById
+    getSingleShopById: getSingleShopById,
+    getCart: getCart
 }

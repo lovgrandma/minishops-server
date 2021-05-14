@@ -229,7 +229,15 @@ const getImagesAndTitlesForCartProducts = async(req, res, next) => {
             if (req.body.username) {
                 username = req.body.username;
             }
-            let data = await products.getImagesAndTitlesForCartProductsDb(req.body.cachedCart, username);
+            let checkCC = false;
+            if (req.body.checkCC) {
+                checkCC = req.body.checkCC;
+            }
+            let getNewCart = false;
+            if (req.body.getNewCart) {
+                getNewCart = req.body.getNewCart;
+            }
+            let data = await products.getImagesAndTitlesForCartProductsDb(req.body.cachedCart, username, checkCC, getNewCart);
             if (data.error) {
                 return res.json({ data: null, error: data.error });
             } else {
@@ -238,6 +246,62 @@ const getImagesAndTitlesForCartProducts = async(req, res, next) => {
         }
     } catch (err) {
         return res.json({ error: "Failed to get product data" });
+    }
+}
+
+const setProductsQuantites = async(req, res, next) => {
+    try {
+        if (req.body.self && req.body.username && req.body.products) {
+            let result = await users.setProductsQuantities(req.body.username, req.body.products);
+            if (result) {
+                if (result.error) {
+                    return res.json({ data: "", error: "did not complete" });
+                } else { 
+                    let newCart = await ecommerce.getCart(req.body.username);
+                    if (newCart) {
+                        return res.json({ data: result.data, error: "", cart: newCart });
+                    } else {
+                        return res.json({ data: result.data, error: "" });
+                    }
+                }
+            } else {
+                return res.json({ data: "", error: "did not complete" });
+            }
+        } else {
+            return res.json({ data: "", error: "did not complete" });
+        }
+    } catch (err) {
+        return res.json({ data: "", error: "did not complete" });
+    }
+}
+
+const updateSingleShippingOnProduct = async(req, res, next) => {
+    try {
+        if (req.body.username && req.body.productData && req.body.shippingRule) {
+            let result = await products.changeShippingClass(req.body.username, req.body.productData, req.body.shippingRule);
+            if (result) {
+                return res.json({
+                    data: result.data,
+                    error: result.error,
+                    success: result.success
+                });
+            } else {
+                return res.json({
+                    data: null,
+                    error: "failed to update shipping class"
+                });
+            }
+        } else {
+            return res.json({
+                data: null,
+                error: "failed to update shipping class"
+            });
+        }
+    } catch (err) {
+        return res.json({
+            data: null,
+            error: "failed to update shipping class"
+        });
     }
 }
 
@@ -276,6 +340,14 @@ router.post('/addoneproducttocart', (req, res, next) => {
 router.post('/getimagesandtitlesforcartproducts', (req, res, next) => {
     return getImagesAndTitlesForCartProducts(req, res, next);
 });
+
+router.post('/setproductquantites', (req, res, next) => {
+    return setProductsQuantites(req, res, next);
+});
+
+router.post('/updatesingleshippingonproduct', (req, res, next) => {
+    return updateSingleShippingOnProduct(req, res, next);
+})
 
 router.get('/hello', (req, res, next) => {
     return res.json("Hey welcome to minishops")

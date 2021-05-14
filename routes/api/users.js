@@ -207,7 +207,7 @@ const addOneProductAction = async(username, product, validDefaultShippingClass) 
                         if (productDbRecord.styles[i].descriptor == product.style) { // If style matches, iterate through options
                             for (let j = 0; j < productDbRecord.styles[i].options.length; j++) {
                                 if (productDbRecord.styles[i].options[j].descriptor == product.option) { // We found the match for the product. Return quantity for comparison
-                                    matchProductQuantity = productDbRecord.styles[i].options[j].quantity;
+                                    matchProductQuantity = Number(productDbRecord.styles[i].options[j].quantity);
                                 }
                             }
                         }
@@ -241,7 +241,7 @@ const addOneProductAction = async(username, product, validDefaultShippingClass) 
                         // If id, style and option the same. It is definitively the same product.
                         if (cart.items[i].uuid == product.id && cart.items[i].style == product.style && cart.items[i].option == product.option) {
                             match = true;
-                            cart.items[i].quantity = cart.items[i].quantity + 1; // Add 1 to quantity
+                            cart.items[i].quantity = Number(cart.items[i].quantity) + 1; // Add 1 to quantity
                             if (matchProductQuantity < cart.items[i].quantity) {
                                 return {
                                     data: {},
@@ -370,16 +370,159 @@ const addOneProductToUserCartDb = async(username, product) => {
             data: {},
             error: "Failed to add product to cart"
         }
-    } 
-    // let session = driver.session();
-    
+    }     
     // if matching shipping class and product of style and option has quantity over more than users current amt of items in cart, add product to cart w/ default shipping class
     // product should have uuid, quantity, style, option, shop id and selectd shipping class
     // return cart to client
 }
 
+// Will set amount of products or remove product for user cart and return user cart
+const setProductsQuantities = async(username, products) => {
+    try {
+        // Will get all updated quantities in product updates and update the cart object on the user db record, then retrieve new cart
+        async function setQuantitiesForAllOnUserCart(username, productUpdates) {
+            try {
+                let session = driver.session();
+                let query = "match (a:Person { name: $name }) return a";
+                let params = { name: username };
+                return await session.run(query, params)
+                    .then( async (result) => {
+                        session.close();
+                        if (result.records[0]._fields[0].properties.cart) {
+                            let cart = JSON.parse(result.records[0]._fields[0].properties.cart);
+                            productUpdates.forEach((item) => {
+                                for (let i = 0; i < cart.items.length; i++) {
+                                    if (item.product.uuid == cart.items[i].uuid && item.product.style == cart.items[i].style && item.product.option == cart.items[i].option) { // good match, update quantity
+                                        if (item.newQuantity == 0) {
+                                            cart.items.splice(i, 1);
+                                        } else {
+                                            cart.items[i].quantity = Number(item.newQuantity);
+                                        }
+                                        break;
+                                    }
+                                }
+                            });
+                            let session2 = driver.session();
+                            query = "match (a:Person { name: $name }) set a.cart = $cart return a";
+                            params = { name: username, cart: JSON.stringify(cart) };
+                            return await session2.run(query, params)
+                                .then((result) => {
+                                    if (result.records[0]._fields[0].properties) {
+                                        return {
+                                            data: productUpdates,
+                                            error: null
+                                        }
+                                    } else {
+                                        return false;
+                                    }
+                                })
+                                .catch((err) => {
+                                    return false;
+                                })
+                        } else {
+                            return false;
+                        }
+                    })
+                    .catch((err) => {
+                        console.log(err);
+                        return false;
+                    })
+            } catch (err) {
+                console.log(err);
+                return false;
+            }
+        };
+
+        // update quantities and then call getImagesAndTitlesForCartProductsDb from products.js to get new cart data
+        let resolveItemUpdate = products.map(item => {
+            return new Promise( async(resolve, reject) => {
+                if (item.newQuantity != 0) {
+                    let session = driver.session();
+                    let query = "match (a:Product { id: $id }) return a";
+                    let params = { id: item.product.uuid };
+                    session.run(query, params)
+                        .then((result) => {
+                            session.close();
+                            if (result.records[0]._fields[0].properties.styles) { // Should throw err if no match and reject false
+                                let styles = JSON.parse(result.records[0]._fields[0].properties.styles);
+                                if (styles.length > 1) {
+                                    for (let i = 0; i < styles.length; i++) {
+                                        if (styles[i].descriptor == item.product.style) {
+                                            for (let j = 0; j < styles[i].options.length; j++) {
+                                                if (styles[i].options[j].descriptor == item.product.option) {
+                                                    if (styles[i].options[j].quantity >= item.newQuantity) {
+                                                        // Quantity of product is greater than quantity user wishes to set, go set
+                                                        resolve({
+                                                            product: item.product,
+                                                            newQuantity: item.newQuantity,
+                                                            changedQuantity: false
+                                                        });
+                                                    } else {
+                                                        // User set amount too high, set new at item max quantity
+                                                        resolve({
+                                                            product: item.product,
+                                                            newQuantity: styles[i].options[j].quantity,
+                                                            changedQuantity: true
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else { // Only one, must be match
+                                    if (styles[0].options[0].quantity >= item.newQuantity) {
+                                        resolve({
+                                            product: item.product,
+                                            newQuantity: item.newQuantity,
+                                            changedQuantity: false
+                                        });
+                                    } else {
+                                        resolve({
+                                            product: item.product,
+                                            newQuantity: styles[0].options[0].quantity,
+                                            changedQuantity: true
+                                        });
+                                    }
+                                }
+                            }
+                            reject(false);
+                        })
+                        .catch((err) => {
+                            reject(false);
+                        })
+                } else { // If target user quantity of product is 0, just allow them to remove it from cart
+                    resolve({
+                        product: item.product,
+                        newQuantity: 0,
+                        changedQuantity: false
+                    });
+                }
+            });
+        });
+        let productUpdates = await Promise.all(resolveItemUpdate);
+        let result = await setQuantitiesForAllOnUserCart(username, productUpdates);
+        if (result) {
+            return {
+                data: result.data,
+                error: result.error
+            }
+        } else {
+            return {
+                data: null,
+                error: "did not complete"
+            }
+        }
+    } catch (err) {
+        return {
+            data: null,
+            error: "did not complete"
+        }
+    }
+}
+
 module.exports = {
     saveShippingDataToUserRecord: saveShippingDataToUserRecord,
     getUserShippingDataFromDb: getUserShippingDataFromDb,
-    addOneProductToUserCartDb: addOneProductToUserCartDb
+    addOneProductToUserCartDb: addOneProductToUserCartDb,
+    setProductsQuantities: setProductsQuantities
 }
