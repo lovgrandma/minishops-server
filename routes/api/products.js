@@ -702,6 +702,7 @@ const getAllPreCheckoutData = async(cart, records, hash, username, checkCC) => {
                         changedShippingOnAtleastOne: changedShippingOnAtleastOne
                     }
                 } else {
+                    console.log(checkCC, totals);
                     // get good Stripe CC data on user acc , will chekc their mongoDB and then check customer acc for valid CC
                     // Check good product quantity on ALL products
                     // Check valid receiving Stripe account for shop

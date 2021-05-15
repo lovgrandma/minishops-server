@@ -249,6 +249,23 @@ const getImagesAndTitlesForCartProducts = async(req, res, next) => {
     }
 }
 
+const processCompleteCheckout = async(req, res, next) => {
+    try {
+        if (req.body.username) {
+            let data = await products.getImagesAndTitlesForCartProductsDb(req.body.cachedCart, req.body.username, true, true);
+            if (!data) {
+                return res.json({ cartData: null, error: "failed to complete checkout" });
+            } else if (data.error) {
+                return res.json({ cartData: null, error: data.error });
+            } else {
+                // Continue
+            }
+        }
+    } catch (err) {
+        return res.json({ cartData: null, error: "Failed to complete checkout" });
+    }
+}
+
 const setProductsQuantites = async(req, res, next) => {
     try {
         if (req.body.self && req.body.username && req.body.products) {
@@ -347,6 +364,10 @@ router.post('/setproductquantites', (req, res, next) => {
 
 router.post('/updatesingleshippingonproduct', (req, res, next) => {
     return updateSingleShippingOnProduct(req, res, next);
+});
+
+router.post('/processcompletecheckout', (req, res, next) => {
+    return processCompleteCheckout(req, res, next);
 })
 
 router.get('/hello', (req, res, next) => {
