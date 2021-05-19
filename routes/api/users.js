@@ -92,7 +92,10 @@ const checkValidShippingClass = async(username, product) => {
     try {
         if (product.hasOwnProperty("shopId") && product.hasOwnProperty("id")) {
             let userShippingData = await getUserShippingDataFromDb(username);
+            console.log(userShippingData);
             if (!userShippingData) {
+                return "No shipping data on user record";
+            } else if (!userShippingData.country) {
                 return "No shipping data on user record";
             }
             let shop = await ecommerce.getSingleShopById(product.shopId);
