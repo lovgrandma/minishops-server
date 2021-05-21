@@ -13,6 +13,7 @@ const driver = neo4j.driver(s3Cred.neo.address, neo4j.auth.basic(s3Cred.neo.user
 const User = require('../../models/user');
 const ecommerce = require('./ecommerce.js');
 const productHandler = require('./product.js');
+const { setQuantitiesForAllOnUserCart } = require('./cart.js');
 
 /**
  * Will take data from user input shipping data and ensure that it is in the right format before submitting to database
@@ -122,7 +123,6 @@ const checkValidShippingClass = async(username, product) => {
             return false;
         }
     } catch (err) {
-        console.log(err);
         return false;
     }
 }
@@ -334,6 +334,9 @@ const addOneProductAction = async(username, product, validDefaultShippingClass) 
 }
 
 const addOneProductToUserCartDb = async(username, product) => {
+    // if matching shipping class and product of style and option has quantity over more than users current amt of items in cart, add product to cart w/ default shipping class
+    // product should have uuid, quantity, style, option, shop id and selectd shipping class
+    // return cart to client
     try {
         let validDefaultShippingClass = await checkValidShippingClass(username, product); // Check shop for matching shipping class. Product must have atleast one matching shipping class that ships to users country
         if (validDefaultShippingClass) {
@@ -373,69 +376,68 @@ const addOneProductToUserCartDb = async(username, product) => {
             data: {},
             error: "Failed to add product to cart"
         }
-    }     
-    // if matching shipping class and product of style and option has quantity over more than users current amt of items in cart, add product to cart w/ default shipping class
-    // product should have uuid, quantity, style, option, shop id and selectd shipping class
-    // return cart to client
+    }  
+}
+
+/**
+ * Given the product on the database and the intended new quantity of a product, will determine if quantity set can be satisfied by current amount in stock
+ * @param {Object} result 
+ * @param {Object} item 
+ * @returns {Object || False}
+ */
+const updateSingleItemQuantity = function(result, item) {
+    try {
+        if (result.records[0]._fields[0].properties.styles) { // Should throw err if no match and reject false
+            let styles = JSON.parse(result.records[0]._fields[0].properties.styles);
+            if (styles.length > 1) {
+                for (let i = 0; i < styles.length; i++) {
+                    if (styles[i].descriptor == item.product.style) {
+                        for (let j = 0; j < styles[i].options.length; j++) {
+                            if (styles[i].options[j].descriptor == item.product.option) {
+                                if (styles[i].options[j].quantity >= item.newQuantity) {
+                                    // Quantity of product is greater than quantity user wishes to set, go set
+                                    return {
+                                        product: item.product,
+                                        newQuantity: item.newQuantity,
+                                        changedQuantity: false
+                                    };
+                                } else {
+                                    // User set amount too high, set new at item max quantity
+                                    return {
+                                        product: item.product,
+                                        newQuantity: styles[i].options[j].quantity,
+                                        changedQuantity: true
+                                    };
+                                }
+                            }
+                        }
+                    }
+                }
+            } else { // Only one, must be match
+                if (styles[0].options[0].quantity >= item.newQuantity) {
+                    return {
+                        product: item.product,
+                        newQuantity: item.newQuantity,
+                        changedQuantity: false
+                    };
+                } else {
+                    return {
+                        product: item.product,
+                        newQuantity: styles[0].options[0].quantity,
+                        changedQuantity: true
+                    };
+                }
+            }
+        }
+        return false;
+    } catch (err) {
+        return false;
+    }
 }
 
 // Will set amount of products or remove product for user cart and return user cart
 const setProductsQuantities = async(username, products) => {
     try {
-        // Will get all updated quantities in product updates and update the cart object on the user db record, then retrieve new cart
-        async function setQuantitiesForAllOnUserCart(username, productUpdates) {
-            try {
-                let session = driver.session();
-                let query = "match (a:Person { name: $name }) return a";
-                let params = { name: username };
-                return await session.run(query, params)
-                    .then( async (result) => {
-                        session.close();
-                        if (result.records[0]._fields[0].properties.cart) {
-                            let cart = JSON.parse(result.records[0]._fields[0].properties.cart);
-                            productUpdates.forEach((item) => {
-                                for (let i = 0; i < cart.items.length; i++) {
-                                    if (item.product.uuid == cart.items[i].uuid && item.product.style == cart.items[i].style && item.product.option == cart.items[i].option) { // good match, update quantity
-                                        if (item.newQuantity == 0) {
-                                            cart.items.splice(i, 1);
-                                        } else {
-                                            cart.items[i].quantity = Number(item.newQuantity);
-                                        }
-                                        break;
-                                    }
-                                }
-                            });
-                            let session2 = driver.session();
-                            query = "match (a:Person { name: $name }) set a.cart = $cart return a";
-                            params = { name: username, cart: JSON.stringify(cart) };
-                            return await session2.run(query, params)
-                                .then((result) => {
-                                    if (result.records[0]._fields[0].properties) {
-                                        return {
-                                            data: productUpdates,
-                                            error: null
-                                        }
-                                    } else {
-                                        return false;
-                                    }
-                                })
-                                .catch((err) => {
-                                    return false;
-                                })
-                        } else {
-                            return false;
-                        }
-                    })
-                    .catch((err) => {
-                        console.log(err);
-                        return false;
-                    })
-            } catch (err) {
-                console.log(err);
-                return false;
-            }
-        };
-
         // update quantities and then call getImagesAndTitlesForCartProductsDb from products.js to get new cart data
         let resolveItemUpdate = products.map(item => {
             return new Promise( async(resolve, reject) => {
@@ -446,49 +448,12 @@ const setProductsQuantities = async(username, products) => {
                     session.run(query, params)
                         .then((result) => {
                             session.close();
-                            if (result.records[0]._fields[0].properties.styles) { // Should throw err if no match and reject false
-                                let styles = JSON.parse(result.records[0]._fields[0].properties.styles);
-                                if (styles.length > 1) {
-                                    for (let i = 0; i < styles.length; i++) {
-                                        if (styles[i].descriptor == item.product.style) {
-                                            for (let j = 0; j < styles[i].options.length; j++) {
-                                                if (styles[i].options[j].descriptor == item.product.option) {
-                                                    if (styles[i].options[j].quantity >= item.newQuantity) {
-                                                        // Quantity of product is greater than quantity user wishes to set, go set
-                                                        resolve({
-                                                            product: item.product,
-                                                            newQuantity: item.newQuantity,
-                                                            changedQuantity: false
-                                                        });
-                                                    } else {
-                                                        // User set amount too high, set new at item max quantity
-                                                        resolve({
-                                                            product: item.product,
-                                                            newQuantity: styles[i].options[j].quantity,
-                                                            changedQuantity: true
-                                                        });
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                } else { // Only one, must be match
-                                    if (styles[0].options[0].quantity >= item.newQuantity) {
-                                        resolve({
-                                            product: item.product,
-                                            newQuantity: item.newQuantity,
-                                            changedQuantity: false
-                                        });
-                                    } else {
-                                        resolve({
-                                            product: item.product,
-                                            newQuantity: styles[0].options[0].quantity,
-                                            changedQuantity: true
-                                        });
-                                    }
-                                }
+                            let itemData = updateSingleItemQuantity(result, item);
+                            if (itemData) {
+                                resolve(itemData);
+                            } else {
+                                reject(false);
                             }
-                            reject(false);
                         })
                         .catch((err) => {
                             reject(false);

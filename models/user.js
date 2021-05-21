@@ -32,11 +32,11 @@ const UserSchema = new mongoose.Schema({
     },
     password: {
         type: String,
-        required: true,
+        required: false,
     },
     phone: {
         type: String,
-        required: true
+        required: false
     },
     friends: {
         type: Array,
@@ -69,6 +69,10 @@ const UserSchema = new mongoose.Schema({
     shipping: {
         type: Object,
         required: true
+    },
+    thirdparty: {
+        type: Object,
+        required: false
     }
 });
 

@@ -545,7 +545,7 @@ const getShopsByList = async(shops) => {
  *  @param {Map} hash
  *  @returns {Object[] || Boolean} Array of objects or falsy result
  */
-const getAllPreCheckoutData = async(cart, records, hash, username, checkCC) => {
+const getAllPreCheckoutData = async(cart, records, username) => {
     try {
         if (username) {
             let userShipping = await users.getUserShippingDataFromDb(username);
@@ -694,22 +694,12 @@ const getAllPreCheckoutData = async(cart, records, hash, username, checkCC) => {
                 totals.shipping = parseFloat(totals.shipping).toFixed(2);
                 totals.products = parseFloat(totals.products).toFixed(2);
                 totals.total = parseFloat(totals.total).toFixed(2);
-                if (!checkCC) {
-                    return {
-                        cart: cart,
-                        shop: shopArr,
-                        totals: totals,
-                        changedShippingOnAtleastOne: changedShippingOnAtleastOne
-                    }
-                } else {
-                    console.log(checkCC, totals);
-                    // get good Stripe CC data on user acc , will chekc their mongoDB and then check customer acc for valid CC
-                    // Check good product quantity on ALL products
-                    // Check valid receiving Stripe account for shop
+                return {
+                    cart: cart,
+                    shop: shopArr,
+                    totals: totals,
+                    changedShippingOnAtleastOne: changedShippingOnAtleastOne
                 }
-                
-                // GOOD CC? Check users CC
-                // GOOD PRODUCT QUANTITY? Product stock must be greater or equal to amount user is buying
             }
         }
         return false;
@@ -723,60 +713,67 @@ const getAllPreCheckoutData = async(cart, records, hash, username, checkCC) => {
  * @param {*} cart 
  * @returns 
  */
-const getImagesAndTitlesForCartProductsDb = async(cart, username, checkCC = false, getNewCart = false) => {
+const getImagesAndTitlesForCartProductsDb = async(cart, username, getNewCart = false) => {
     try {
-        if (getNewCart) {
-            cart = await ecommerce.getCart(username);
-        }
-        let productIds = await filterProductUuidData(cart);
-        if (productIds) {
-            // $productIds should look exactly like ["1212", "23123123", "1231312"]. See https://stackoverflow.com/questions/61121568/neo4j-match-on-lists
-            let session = driver.session();
-            let query = "match (a:Product) where a.id in $productIds return a"; // Should get all products with matching ids in organized string array
-            let params = { productIds: productIds };
-            return await session.run(query, params)
-                .then( async (result) => {
-                    let hash = new Map();
-                    if (result) {
-                        if (result.records) {
-                            if (result.records[0]) {
-                                cart.items.sort(function(a, b) { // Organize products logically by order of same shop ids
-                                    return a.shopId.localeCompare(b.shopId);
-                                });
-                                cart.items.forEach((item, index) => { // Add supported shipping on each product, to filter what shipping classes can be used on each
-                                    for (let i = 0; i < result.records.length; i++) {
-                                        if (item.uuid == result.records[i]._fields[0].properties.id) {
-                                            cart.items[index].shipping = result.records[i]._fields[0].properties.shipping;
-                                        }
-                                    }
-                                });
-                                cart.items = assignImagesNamesPrice(cart.items, result.records, hash);
-                                if (cart.wishList) {
-                                    cart.wishList = assignImagesNamesPrice(cart.wishList, result.records, hash);
-                                }
-                                cart.checkoutTruths = await getAllPreCheckoutData(cart.items, result.records, hash, username, checkCC); // if false, get preCheckout failed, dont provide pre checkout shipping/total data
-                                return cart;
-                            } else {
-                                // No products matched because the cart is empty
-                                cart.checkoutTruths = {};
-                                return cart;
-                            }
-                        }
-                    }
-                    return {
-                        error: "Failed to get product data"
-                    }
-                })
-                .catch((err) => {
-                    return {
-                        error: "Failed to get product data"
-                    }
-                })
-        } else {
-            return {
-                error: "Failed to get product data"
+        const getRelevantCart = async (cart, getNewCart, username) => {
+            if (getNewCart) {
+                return await ecommerce.getCart(username);
+            } else {
+                return cart;
             }
         }
+        return getRelevantCart(cart, getNewCart, username)
+            .then(async (cart) => {
+                let productIds = await filterProductUuidData(cart);
+                if (productIds) {
+                    // $productIds should look exactly like ["1212", "23123123", "1231312"]. See https://stackoverflow.com/questions/61121568/neo4j-match-on-lists
+                    let session = driver.session();
+                    let query = "match (a:Product) where a.id in $productIds return a"; // Should get all products with matching ids in organized string array
+                    let params = { productIds: productIds };
+                    return await session.run(query, params)
+                        .then( async (result) => {
+                            let hash = new Map();
+                            if (result) {
+                                if (result.records) {
+                                    if (result.records[0]) {
+                                        cart.items.sort(function(a, b) { // Organize products logically by order of same shop ids
+                                            return a.shopId.localeCompare(b.shopId);
+                                        });
+                                        cart.items.forEach((item, index) => { // Add supported shipping on each product, to filter what shipping classes can be used on each
+                                            for (let i = 0; i < result.records.length; i++) {
+                                                if (item.uuid == result.records[i]._fields[0].properties.id) {
+                                                    cart.items[index].shipping = result.records[i]._fields[0].properties.shipping;
+                                                }
+                                            }
+                                        });
+                                        cart.items = assignImagesNamesPrice(cart.items, result.records, hash);
+                                        if (cart.wishList) {
+                                            cart.wishList = assignImagesNamesPrice(cart.wishList, result.records, hash);
+                                        }
+                                        cart.checkoutTruths = await getAllPreCheckoutData(cart.items, result.records, username); // if false, get preCheckout failed, dont provide pre checkout shipping/total data
+                                        return cart;
+                                    } else {
+                                        // No products matched because the cart is empty
+                                        cart.checkoutTruths = {};
+                                        return cart;
+                                    }
+                                }
+                            }
+                            return {
+                                error: "Failed to get product data"
+                            }
+                        })
+                        .catch((err) => {
+                            return {
+                                error: "Failed to get product data"
+                            }
+                        })
+                } else {
+                    return {
+                        error: "Failed to get product data"
+                    }
+                }
+            });
     } catch (err) {
         return {
             error: "Failed to get product data"

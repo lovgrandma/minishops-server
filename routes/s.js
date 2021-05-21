@@ -15,6 +15,7 @@ const shippingClasses = require('./api/shippingclasses.js');
 const users = require('./api/users.js');
 const ecommerce = require('./api/ecommerce.js');
 const products = require('./api/products.js');
+const cc = require('./api/cc.js');
 
 const uploadSpace = multer({
     storage: multer.diskStorage({
@@ -237,7 +238,7 @@ const getImagesAndTitlesForCartProducts = async(req, res, next) => {
             if (req.body.getNewCart) {
                 getNewCart = req.body.getNewCart;
             }
-            let data = await products.getImagesAndTitlesForCartProductsDb(req.body.cachedCart, username, checkCC, getNewCart);
+            let data = await products.getImagesAndTitlesForCartProductsDb(req.body.cachedCart, username, getNewCart);
             if (data.error) {
                 return res.json({ data: null, error: data.error });
             } else {
@@ -249,20 +250,101 @@ const getImagesAndTitlesForCartProducts = async(req, res, next) => {
     }
 }
 
+// Checks truths totals on each property to check for equality. If not equality total was changed.
+function detectCheckoutTruthsMisMatch(newTotals, oldTotals) {
+    for (const [key, value] of Object.entries(oldTotals)) {
+        if (value != newTotals[key]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 const processCompleteCheckout = async(req, res, next) => {
     try {
         if (req.body.username) {
-            let data = await products.getImagesAndTitlesForCartProductsDb(req.body.cachedCart, req.body.username, true, true);
+            let data = await products.getImagesAndTitlesForCartProductsDb(req.body.cachedCart, req.body.username, true); // Always get new cart
             if (!data) {
-                return res.json({ cartData: null, error: "failed to complete checkout" });
+                return res.json({ cartData: null, error: "Failed to complete checkout. Your account was not charged" });
             } else if (data.error) {
                 return res.json({ cartData: null, error: data.error });
             } else {
-                // Continue
+                // Check same checkout truths data, else return
+                
+                // Get good Stripe CC data on user acc , will check their mongoDB. Does not credit card check due to Stripe CC policy (Excessive to check CC's for validity. CC's are checked for accurate data when added to Stripe's db)
+                let userStripeData = await cc.getUserStripeAccData(req.body.username);
+                // Retrieve shop account and check valid receiving Stripe account for shop
+                if (data.hasOwnProperty('checkoutTruths')) {
+                    if (data.checkoutTruths.hasOwnProperty('shop')) {
+                        let resolveShopCards = data.checkoutTruths.shop.map(shop => {
+                            return new Promise(async (resolve, reject) => {
+                                try {
+                                    let shopCC = await cc.getShopStripeData(shop.id);
+                                    if (shopCC) {
+                                        shop.CC = shopCC;
+                                        resolve(shop);
+                                    } else {
+                                        reject(false);
+                                    }
+                                } catch (err) {
+                                    reject(false);
+                                }
+                            });
+                        });
+                        data.checkoutTruths.shop = await Promise.all(resolveShopCards);
+                    }
+                }
+                let badShopCCData =[ ];
+                for (let i = 0; i < data.checkoutTruths.shop.length; i++) {
+                    if (data.checkoutTruths.shop[i].hasOwnProperty('CC')) {
+                        if (!data.checkoutTruths.shop[i].CC.username || !data.checkoutTruths.shop[i].CC.shopCC) {
+                            badShopCCData.push(data.checkoutTruths.shop[i]);
+                        } 
+                    } else {
+                        badShopCCData.push(data.checkoutTruths.shop[i]);
+                    }
+                }
+                if (!userStripeData) {
+                    // No user CC data
+                    return res.json({ cartData: data, error: "You'll need to add a valid Credit Card to your account to make purchases" });
+                } else if (badShopCCData.length != 0) {
+                    // No shop CC data
+                    return res.json({ cartData: data, error: "A shop was missing valid banking data. Your account was not charged", missingShopCC: badShopCCData });
+                } else {
+                    // Check good product quantity on ALL products
+                    let finalCheckoutCart = await ecommerce.resolveCartQuantities(data, req.body.username); // Final checkout cart will contain mutated cart with changedQuantity (Bool) and newQuantity (Num) properties
+                    if (!finalCheckoutCart) { // Bad error, something went wrong when adjusting cart quantities
+                        let newCartData = await products.getImagesAndTitlesForCartProductsDb(finalCheckoutCart, req.body.username, true);
+                        return res.json({ cartData: newCartData, error: "The purchase was not completed. Your account was not charged" });
+                    } else {
+                        // Go through each new product data, if any have changedQuantity == true, product quantity was adjusted do not fulfill
+                        for (let i = 0; i < finalCheckoutCart.length; i++) {
+                            if (finalCheckoutCart[i].changedQuantity) {
+                                return res.json({ cartData: data, error: "We had to adjust some quantities in your cart due to availability changes, please review. Your account was not charged" });
+                            }
+                        }
+                        // This will filter out erroneous calls from the front end. If there is a mismatch in checkout total calculated and checkout total provided from front end, its an error or a hacker. Don't charge order
+                        let checkoutTotalMismatch = detectCheckoutTruthsMisMatch(data.checkoutTruths.totals, req.body.checkoutTruths.totals);
+                        if (!checkoutTotalMismatch) {
+                            return res.json({ cartData: null, error: "The total you were quoted and the total we calculated did not match. Your account was not charged" });
+                        }
+                        // If the data quantity was not manipulated due to lack of stock, the purchase can be fulfilled and the data in the variable "data" should have completely valid totals.
+                        console.log(data.checkoutTruths);
+                        // Charge user card
+                        // send agreed finders fee to Minipost bank 15%-5%
+                        // provide each shop with necessary payout
+                        // Make record on Db (mongo)
+                        // Empty user cart
+                        // Send back record payment id for page redirect
+
+                    }
+                    return res.json({ cartData: data, error: "The purchase was not completed. Your account was not charged" });
+                }
+                
             }
         }
     } catch (err) {
-        return res.json({ cartData: null, error: "Failed to complete checkout" });
+        return res.json({ cartData: null, error: "Failed to complete checkout. Your account was not charged" });
     }
 }
 
@@ -272,7 +354,7 @@ const setProductsQuantites = async(req, res, next) => {
             let result = await users.setProductsQuantities(req.body.username, req.body.products);
             if (result) {
                 if (result.error) {
-                    return res.json({ data: "", error: "did not complete" });
+                    return res.json({ data: null, error: "did not complete" });
                 } else { 
                     let newCart = await ecommerce.getCart(req.body.username);
                     if (newCart) {
@@ -282,13 +364,13 @@ const setProductsQuantites = async(req, res, next) => {
                     }
                 }
             } else {
-                return res.json({ data: "", error: "did not complete" });
+                return res.json({ data: null, error: "did not complete" });
             }
         } else {
-            return res.json({ data: "", error: "did not complete" });
+            return res.json({ data: null, error: "did not complete" });
         }
     } catch (err) {
-        return res.json({ data: "", error: "did not complete" });
+        return res.json({ data: null, error: "did not complete" });
     }
 }
 

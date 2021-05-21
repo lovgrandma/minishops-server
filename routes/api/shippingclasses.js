@@ -153,7 +153,6 @@ const saveOneShippingClassToShop = async (owner, username, data, uuid = null) =>
                                     return false;
                                 })
                                 .catch((err) => {
-                                    console.log(err);
                                     return false;
                                 })
                         } else {
@@ -167,7 +166,6 @@ const saveOneShippingClassToShop = async (owner, username, data, uuid = null) =>
             return false;
         }
     } catch (err) {
-        console.log(err);
         return false;
     }
 }
