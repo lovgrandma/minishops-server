@@ -1,7 +1,7 @@
 const fs = require('fs');
 
 /* Deletes one file cleanly */
-deleteOne = async (filePath) => {
+const deleteOne = async (filePath) => {
     try {
         if (filePath) {
             if (typeof filePath === 'string') {
@@ -23,6 +23,15 @@ deleteOne = async (filePath) => {
     }
 }
 
+const convertTime = function(ms) {
+    try {
+        return new Date(ms).toLocaleString();
+    } catch (err) {
+        return ms;
+    }
+}
+
 module.exports = {
-    deleteOne: deleteOne
+    deleteOne: deleteOne,
+    convertTime: convertTime
 }

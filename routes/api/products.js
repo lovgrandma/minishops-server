@@ -647,6 +647,24 @@ const getAllPreCheckoutData = async(cart, records, username) => {
                                 }
                             }
                         }
+                        let shippingApplied = false;
+                        // Should retrieve lowest shipping for only once application of shipping and only apply if shippingApplied == false
+                        function getLowestShippingIfNotApplied() {
+                            if (!shippingApplied) {
+                                let lowest = -1;
+                                for (let i = 0; i < cart.length; i++) {
+                                    if (temp.id == cart[i].shopId) {
+                                        if (lowest == -1 || cart[i].shippingClass.price < lowest) {
+                                            lowest = parseFloat(cart[i].shippingClass.price);
+                                        }
+                                    }
+                                }
+                                shippingApplied = true;
+                                return lowest;
+                            } else {
+                                return 0;
+                            }
+                        }
                         // // second check to add 1 (cheapest) onlyOnce shipping class, if shipping value is at 0
                         let cheapest = 0;
                         for (let i = 0; i < cart.length; i++) {
@@ -655,8 +673,8 @@ const getAllPreCheckoutData = async(cart, records, username) => {
                                     temp.totals.totalProductCosts = temp.totals.totalProductCosts + (cart[i].price * cart[i].quantity);
                                     cart[i].calculatedShipping = cart[i].shippingClass.perProduct ?
                                         cart[i].shippingClass.price * cart[i].quantity
-                                        : 0;
-                                    cart[i].calculatedTotal = cart[i].price * cart[i].quantity;
+                                        : getLowestShippingIfNotApplied();
+                                    cart[i].calculatedTotal = cart[i].price * cart[i].quantity; // DO NOT PUT .toFixed(2) here. Will cause failed payments
                                     if (!cart[i].shippingClass.perProduct) {
                                         if (temp.totals.totalShipping == 0) {
                                             if (cheapest == 0 && cart[i].shippingClass.price > 0 || cart[i].shippingClass.price < cheapest) {
@@ -673,7 +691,7 @@ const getAllPreCheckoutData = async(cart, records, username) => {
                         }
                         temp.totals.totalShipping = parseFloat(temp.totals.totalShipping).toFixed(2);
                         temp.totals.totalProductCosts = parseFloat(temp.totals.totalProductCosts).toFixed(2);
-                        shopHash.set(key, temp);
+                         shopHash.set(key, temp);
                     });
                     return cart, shopHash;
                 }
@@ -715,8 +733,8 @@ const getAllPreCheckoutData = async(cart, records, username) => {
  */
 const getImagesAndTitlesForCartProductsDb = async(cart, username, getNewCart = false) => {
     try {
-        const getRelevantCart = async (cart, getNewCart, username) => {
-            if (getNewCart) {
+         const getRelevantCart = async (cart, getNewCart, username) => {
+            if (getNewCart || !cart) {
                 return await ecommerce.getCart(username);
             } else {
                 return cart;
@@ -746,7 +764,7 @@ const getImagesAndTitlesForCartProductsDb = async(cart, username, getNewCart = f
                                                 }
                                             }
                                         });
-                                        cart.items = assignImagesNamesPrice(cart.items, result.records, hash);
+                                         cart.items = assignImagesNamesPrice(cart.items, result.records, hash);
                                         if (cart.wishList) {
                                             cart.wishList = assignImagesNamesPrice(cart.wishList, result.records, hash);
                                         }

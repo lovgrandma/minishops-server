@@ -16,6 +16,9 @@ const users = require('./api/users.js');
 const ecommerce = require('./api/ecommerce.js');
 const products = require('./api/products.js');
 const cc = require('./api/cc.js');
+const bookKeeping = require('./api/bookkeeping.js');
+const cart = require('./api/cart.js');
+const orders = require('./api/orders.js');
 
 const uploadSpace = multer({
     storage: multer.diskStorage({
@@ -238,7 +241,11 @@ const getImagesAndTitlesForCartProducts = async(req, res, next) => {
             if (req.body.getNewCart) {
                 getNewCart = req.body.getNewCart;
             }
-            let data = await products.getImagesAndTitlesForCartProductsDb(req.body.cachedCart, username, getNewCart);
+            let cachedCart = null;
+            if (req.body.cachedCart) {
+                cachedCart = req.body.cachedCart;
+            }
+            let data = await products.getImagesAndTitlesForCartProductsDb(cachedCart, username, getNewCart);
             if (data.error) {
                 return res.json({ data: null, error: data.error });
             } else {
@@ -269,14 +276,20 @@ const processCompleteCheckout = async(req, res, next) => {
             } else if (data.error) {
                 return res.json({ cartData: null, error: data.error });
             } else {
-                // Check same checkout truths data, else return
-                
                 // Get good Stripe CC data on user acc , will check their mongoDB. Does not credit card check due to Stripe CC policy (Excessive to check CC's for validity. CC's are checked for accurate data when added to Stripe's db)
                 let userStripeData = await cc.getUserStripeAccData(req.body.username);
+                if (!userStripeData) {
+                    // No user stripe account
+                    return res.json({ cartData: data, error: "There's a problem with your record. Please contact Minipost administration" });
+                }
+                let userCCsData = await cc.getAccountCCs(userStripeData); // User credit cards in list
+                if (!cc.validateAccountCCsData(userCCsData)) {
+                    return res.json({ cartData: data, error: "You'll need to add a valid Credit Card to your account to make purchases" });
+                }                
                 // Retrieve shop account and check valid receiving Stripe account for shop
                 if (data.hasOwnProperty('checkoutTruths')) {
                     if (data.checkoutTruths.hasOwnProperty('shop')) {
-                        let resolveShopCards = data.checkoutTruths.shop.map(shop => {
+                        let resolveShopPaymentAccounts = data.checkoutTruths.shop.map(shop => {
                             return new Promise(async (resolve, reject) => {
                                 try {
                                     let shopCC = await cc.getShopStripeData(shop.id);
@@ -291,24 +304,20 @@ const processCompleteCheckout = async(req, res, next) => {
                                 }
                             });
                         });
-                        data.checkoutTruths.shop = await Promise.all(resolveShopCards);
+                        data.checkoutTruths.shop = await Promise.all(resolveShopPaymentAccounts);
                     }
                 }
-                let badShopCCData =[ ];
+                let badShopCCData = [];
                 for (let i = 0; i < data.checkoutTruths.shop.length; i++) {
                     if (data.checkoutTruths.shop[i].hasOwnProperty('CC')) {
-                        if (!data.checkoutTruths.shop[i].CC.username || !data.checkoutTruths.shop[i].CC.shopCC) {
+                        if (!data.checkoutTruths.shop[i].CC.username || !data.checkoutTruths.shop[i].CC.shopAcc) {
                             badShopCCData.push(data.checkoutTruths.shop[i]);
                         } 
                     } else {
                         badShopCCData.push(data.checkoutTruths.shop[i]);
                     }
                 }
-                if (!userStripeData) {
-                    // No user CC data
-                    return res.json({ cartData: data, error: "You'll need to add a valid Credit Card to your account to make purchases" });
-                } else if (badShopCCData.length != 0) {
-                    // No shop CC data
+                if (badShopCCData.length != 0) { // Bad shops must be equal to zero, or else there is a shop selling product without a customer Stripe acc attached
                     return res.json({ cartData: data, error: "A shop was missing valid banking data. Your account was not charged", missingShopCC: badShopCCData });
                 } else {
                     // Check good product quantity on ALL products
@@ -329,21 +338,93 @@ const processCompleteCheckout = async(req, res, next) => {
                             return res.json({ cartData: null, error: "The total you were quoted and the total we calculated did not match. Your account was not charged" });
                         }
                         // If the data quantity was not manipulated due to lack of stock, the purchase can be fulfilled and the data in the variable "data" should have completely valid totals.
-                        console.log(data.checkoutTruths);
-                        // Charge user card
-                        // send agreed finders fee to Minipost bank 15%-5%
-                        // provide each shop with necessary payout
-                        // Make record on Db (mongo)
-                        // Empty user cart
-                        // Send back record payment id for page redirect
+                        if (data.checkoutTruths.totals.total != 0) {
+                            // Charge user card agreed upon amount
+                            let charged = await cc.chargeFirstValidCard(userCCsData, userStripeData, data.checkoutTruths.totals.total);
+                            if (!charged) {
+                                return res.json({ cartData: data, error: "The purchase was not completed. Your account was not charged" });
+                            }
+                            let requiresReview = false;
+                            if (charged.amountCharged != charged.total) { // If the amount we were supposed to charge is not equal to the amount charged then the order will require manual review
+                                requiresReview = true;
+                            }
+                            // Make single order record on Database
+                            let orderRecord = await bookKeeping.saveOrderFulfillmentRecord(data, userStripeData, charged, requiresReview, false);
+                            console.log(orderRecord);
+                            if (orderRecord) {
+                                if (orderRecord.shops) {
+                                    // set references for shops involved in order. Orders will be saved as a single document and shops will have order references relevant to them. As opposed to building multiple different orders per shop
+                                    let orderDatas = orderRecord.shops.map(shop => { // Organize owed totals for each shop to do payouts
+                                        let shopShippingTotal = 0;
+                                        let shopProductTotal = 0;
+                                        let shopCompleteTotal = 0;
+                                        for (let i = 0; i < orderRecord.cart.length; i++) {
+                                            if (orderRecord.cart[i].shopId == shop.id) {
+                                                shopShippingTotal += orderRecord.cart[i].calculatedShipping;
+                                                shopProductTotal += orderRecord.cart[i].calculatedTotal;
+                                                shopCompleteTotal += orderRecord.cart[i].calculatedShipping + orderRecord.cart[i].calculatedTotal;
+                                            }
+                                        }
+                                        return {
+                                            shop: shop.id,
+                                            shippingTotal: shopShippingTotal,
+                                            productTotal: shopProductTotal,
+                                            completeTotal: shopCompleteTotal,
+                                            orderId: orderRecord._id
+                                        };
+                                    });
+                                    if (!requiresReview) {
+                                        // Run payouts
+                                        let paymentPromises = orderDatas.map(async shopPaymentData => {
+                                            return await cc.paySingleVendor(shopPaymentData) // each orderDatas do promise
+                                        });
+                                        orderDatas = await Promise.all(paymentPromises);
+                                    } else {
+                                        // Requires review, do not run payouts yet, just empty cart and return data. Add to customer service queue later
+                                        
+                                    }
+                                    let promises = orderRecord.shops.map(async shop => {
+                                        let paid = null;
+                                        function getShopIndex(shopId) {
+                                            for (let i = 0; i < orderDatas.length; i++) {
+                                                if (shopId == orderDatas[i].shop) {
+                                                    if (orderDatas[i].results) {
+                                                        paid = orderDatas[i].results;
+                                                    }
+                                                    return orderDatas[i];
+                                                }
+                                            }
+                                            return {};
+                                        }
+                                        let orderObject = {
+                                            orderId: orderRecord._id,
+                                            bill: getShopIndex(shop.id),
+                                            paid: paid
+                                        }
+                                        return await bookKeeping.associateOrderWithShop(shop.id, orderObject);
+                                    });
+                                    let shopOrderAssociations = await Promise.all(promises); // Will save each order on shop records in mongoDb
+                                    let emptiedUserCart = await cart.emptySingleUserCart(req.body.username);
+                                    return res.json({
+                                        orderRecord: orderRecord,
+                                        cartData: emptiedUserCart,
+                                        error: null
+                                    });
+                                }
+                            }
+                        } else {
+                            // free checkout, skip payments and create records
 
+                        }
                     }
                     return res.json({ cartData: data, error: "The purchase was not completed. Your account was not charged" });
                 }
-                
             }
+        } else {
+            return res.json({ cartData: data, error: "The purchase was not completed. Your account was not charged" });
         }
     } catch (err) {
+        console.log(err);
         return res.json({ cartData: null, error: "Failed to complete checkout. Your account was not charged" });
     }
 }
@@ -404,6 +485,30 @@ const updateSingleShippingOnProduct = async(req, res, next) => {
     }
 }
 
+const getSingleOrder = async(req, res, next) => {
+    try {
+        if (req.body.orderId && req.body.username) {
+            let orderData = await orders.getSingleOrder(req.body.orderId, req.body.username);
+            console.log(orderData);
+            if (orderData) {
+                return res.json({
+                    data: orderData,
+                    error: null
+                });
+            } else {
+                throw new Error;
+            }
+        } else {
+            throw new Error;
+        }
+    } catch (err) {
+        return res.json({
+            data: null,
+            error: "failed to get order"
+        });
+    }
+}
+
 router.post('/savesingleproducttoshop', uploadSpace.array('image', 10), (req, res, next) => {
     return saveSingleProduct(req, res, next);
 });
@@ -450,7 +555,11 @@ router.post('/updatesingleshippingonproduct', (req, res, next) => {
 
 router.post('/processcompletecheckout', (req, res, next) => {
     return processCompleteCheckout(req, res, next);
-})
+});
+
+router.post('/getsingleorder', (req, res, next) => {
+    return getSingleOrder(req, res, next);
+});
 
 router.get('/hello', (req, res, next) => {
     return res.json("Hey welcome to minishops")

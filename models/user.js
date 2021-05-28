@@ -66,6 +66,10 @@ const UserSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    vendorPayment: {
+        type: String,
+        required: false
+    },
     shipping: {
         type: Object,
         required: true

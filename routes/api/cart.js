@@ -60,6 +60,39 @@ async function setQuantitiesForAllOnUserCart(username, productUpdates) {
     }
 };
 
+async function emptySingleUserCart(username) {
+    try {
+        let session = driver.session();
+        let query = "match (a:Person { name: $name}) return a";
+        let params = { name: username };
+        return await session.run(query, params)
+            .then(async (result) => {
+                session.close();
+                if (result.records[0]._fields[0].properties) {
+                    let tempCart = JSON.parse(result.records[0]._fields[0].properties.cart);
+                    tempCart.items = [];
+                    tempCart = JSON.stringify(tempCart);
+                    let session2 = driver.session();
+                    let query = "match (a:Person { name: $name}) set a.cart = $cart return a";
+                    params = { name: username, cart: tempCart };
+                    return await session2.run(query, params)
+                        .then((result) => {
+                            return JSON.parse(result.records[0]._fields[0].properties.cart);
+                        })
+                        .catch((err) => {
+                            return false;
+                        })
+                }
+            })
+            .catch((err) => {
+                return false;
+            })
+    } catch (err) {
+        return false;
+    }
+}
+
 module.exports = {
-    setQuantitiesForAllOnUserCart: setQuantitiesForAllOnUserCart
+    setQuantitiesForAllOnUserCart: setQuantitiesForAllOnUserCart,
+    emptySingleUserCart: emptySingleUserCart
 }
