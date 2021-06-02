@@ -21,11 +21,14 @@ const ecommerce = require('./ecommerce.js');
  * @param {string} filter - The order that products are filtered through 
  * @param {number} append - pagination
  */
-const getShopDbProducts = async function(owner, filter = null, append = 0) {
+const getShopDbProducts = async function(owner, filter = null, append = 0, noAppend = false) {
     try {
         append += 10;
         let session = driver.session();
-        let query = "match (a:Person { name: $owner })-[r:OWNS]-(b:Shop)-[r2:STOCKS]-(c:Product) return c limit $append";
+        let query = "match (a:Person { name: $owner })-[r:OWNS]-(b:Shop)-[r2:STOCKS]-(c:Product) return c";
+        if (!noAppend) {
+            query += " limit $append"; // Append if no append is false
+        }
         let params = { owner: owner, append: neo4j.int(append) };
         return await session.run(query, params)
             .then(async function(result) {

@@ -20,14 +20,14 @@ const uuidv4 = require('uuid/v4');
 const saveOrderFulfillmentRecord = async function(data, userStripeData, charged, requiresReview = false, proBono = false) {
     try {
         var order = {
-            _id: await makeNewOrderUuid(),
+            id: await makeNewOrderUuid(), // Do not override default _id, that contains a timestamp for ordering
             customerId: null,
             amountCaptured: null,
             expectedTotal: null,
             chargeId: null,
             paymentFulfilled: false,
             receiptUrl: "",
-            createdTime: null,
+            createdTime: new Date().getTime(),
             paymentIntentId: null,
             paymentMethodId: null,
             paymentMethodDetails: null,
@@ -138,7 +138,7 @@ const makeNewOrderUuid = async (uuid = "") => {
     let uniqueUuid = 0;
     do {
         uuid = uuidv4().split("-").join("");
-        let result = await Order.findOne({ _id: uuid });
+        let result = await Order.findOne({ id: uuid });
         if (!result) { // No result found, uuid can safely be used for this user
             uniqueUuid = 5;
             return uuid;
@@ -149,7 +149,6 @@ const makeNewOrderUuid = async (uuid = "") => {
     // If randomly matches 5 uuid's, just return a randomly generated uuid and hope it does not match. 1 in several billion chance of running. Will pass error to client if matches again preventing crash
     return uuidv4();
 }
-
 
 module.exports = {
     saveOrderFulfillmentRecord: saveOrderFulfillmentRecord,

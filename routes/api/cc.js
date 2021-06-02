@@ -333,7 +333,6 @@ const recordPaymentRecord = async function(paymentRecord, note = "") {
             return null;
         }
     } catch(err) {
-        console.log(err);
         return null;
     }
 }
@@ -350,11 +349,9 @@ const paySingleVendor = async (paymentShopData) => {
             let shopStripeData = await getShopStripeData(paymentShopData.shop);
             let total = paymentShopData.completeTotal;
             let adjustedRate = await getAdjustedRate(paymentShopData.shop);
-            console.log(total, adjustedRate);
             let adjustedTotal = total * adjustedRate;
-            console.log(adjustedTotal);
             let stripeSafeTotal = Math.round(adjustedTotal * 100);
-            console.log(stripeSafeTotal);
+            console.log({stripeSafeTotal});
             let shopPaymentAcc = shopStripeData.shopAcc;
             paymentShopData.adjustedRate = adjustedRate;
             paymentShopData.adjustedTotal = parseFloat(adjustedTotal.toFixed(2));
@@ -369,7 +366,6 @@ const paySingleVendor = async (paymentShopData) => {
                     paymentShopData.paymentReceipt = await recordPaymentRecord(paymentShopData);
                     resolve(paymentShopData);
                 } catch (err) {
-                    console.log(err);
                     paymentShopData.results = err.code;
                     paymentShopData.paymentReceipt = await recordPaymentRecord(paymentShopData);
                     resolve(paymentShopData);
@@ -380,7 +376,6 @@ const paySingleVendor = async (paymentShopData) => {
             }
             
         } catch (err) {
-            console.log(err);
             paymentShopData.results = "failed";
             resolve(paymentShopData);
         }

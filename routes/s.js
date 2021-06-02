@@ -19,6 +19,7 @@ const cc = require('./api/cc.js');
 const bookKeeping = require('./api/bookkeeping.js');
 const cart = require('./api/cart.js');
 const orders = require('./api/orders.js');
+const placement = require('./api/placement.js');
 
 const uploadSpace = multer({
     storage: multer.diskStorage({
@@ -350,7 +351,7 @@ const processCompleteCheckout = async(req, res, next) => {
                             }
                             // Make single order record on Database
                             let orderRecord = await bookKeeping.saveOrderFulfillmentRecord(data, userStripeData, charged, requiresReview, false);
-                            console.log(orderRecord);
+                            console.log({orderRecord});
                             if (orderRecord) {
                                 if (orderRecord.shops) {
                                     // set references for shops involved in order. Orders will be saved as a single document and shops will have order references relevant to them. As opposed to building multiple different orders per shop
@@ -397,7 +398,7 @@ const processCompleteCheckout = async(req, res, next) => {
                                             return {};
                                         }
                                         let orderObject = {
-                                            orderId: orderRecord._id,
+                                            orderId: orderRecord.id,
                                             bill: getShopIndex(shop.id),
                                             paid: paid
                                         }
@@ -424,7 +425,7 @@ const processCompleteCheckout = async(req, res, next) => {
             return res.json({ cartData: data, error: "The purchase was not completed. Your account was not charged" });
         }
     } catch (err) {
-        console.log(err);
+        console.log({err})
         return res.json({ cartData: null, error: "Failed to complete checkout. Your account was not charged" });
     }
 }
@@ -489,7 +490,6 @@ const getSingleOrder = async(req, res, next) => {
     try {
         if (req.body.orderId && req.body.username) {
             let orderData = await orders.getSingleOrder(req.body.orderId, req.body.username);
-            console.log(orderData);
             if (orderData) {
                 return res.json({
                     data: orderData,
@@ -505,6 +505,104 @@ const getSingleOrder = async(req, res, next) => {
         return res.json({
             data: null,
             error: "failed to get order"
+        });
+    }
+}
+
+const getUserOrders = async(req, res, next) => {
+    try {
+        if (req.body.username) {
+            let ordersData = await orders.getAllUserOrders(req.body.username);
+            if (ordersData) {
+                return res.json({
+                    data: ordersData,
+                    error: null
+                });
+            } else {
+                throw new Error;
+            }
+        } else {
+            throw new Error;
+        }
+    } catch (err) {
+        return res.json({
+            data: null,
+            error: "failed to get orders"
+        })
+    }
+}
+
+const getShopOrders = async(req, res, next) => {
+    try {
+        if (req.body.username) {
+            let appendPending = req.body.appendPending ? req.body.appendPending : 0;
+            let appendCompleted = req.body.appendCompleted ? req.body.appendCompleted : 0;
+            let shopOrdersData = await orders.getShopOrders(req.body.username, appendPending, appendCompleted);
+            if (shopOrdersData) {
+                return res.json(shopOrdersData);
+            } else {
+                throw new Error;
+            }
+        } else {
+            throw new Error;
+        }
+    } catch (err) {
+        return res.json({
+            data: null,
+            error: "failed to get shop orders"
+        });
+    }
+}
+
+const markOrderShipped = async(req, res, next) => {
+    try {
+        if (req.body.username && req.body.shopId && req.body.orderId) {
+            let updatedOrder = await orders.moveOrderCompleted(req.body.shopId, req.body.orderId);
+            let appendPending = req.body.appendPending ? req.body.appendPending : 0;
+            let appendCompleted = req.body.appendCompleted ? req.body.appendCompleted : 0;
+            let shopOrdersData = await orders.getShopOrders(req.body.username, appendPending, appendCompleted);
+            if (shopOrdersData) {
+                return res.json(shopOrdersData);
+            } else {
+                throw new Error;
+            }
+        }
+    } catch (err) {
+        return res.json({
+            data: null,
+            error: "failed to update order"
+        });
+    }
+}
+
+/**
+ * Will get product videos for placement in video playback and current videos already listed in playback
+ * @param {*} req 
+ * @param {*} res 
+ * @param {*} next 
+ * @returns 
+ */
+const getProductsForVideoPlacement = async(req, res, next) => {
+    try {
+        if (req.body.username) {
+            let productData = await products.getShopDbProducts(req.body.username, null, 0, true); // Just get top 1000 products now
+            let placementData;
+            if (req.body.videoId) {
+                placementData = await placement.getSingleVideoPlacementData(req.body.videoId); // then get current video and its product placement array property
+            }
+            let data = {
+                productData: productData,
+                placementData: placementData
+            }
+            return res.json({
+                data: data,
+                error: null
+            });
+        }
+    } catch (err) {
+        return res.json({
+            data: null,
+            error: "failed to get product placement data"
         });
     }
 }
@@ -561,8 +659,25 @@ router.post('/getsingleorder', (req, res, next) => {
     return getSingleOrder(req, res, next);
 });
 
+router.post('/getuserorders', (req, res, next) => {
+    return getUserOrders(req, res, next);
+});
+
+router.post('/getshoporders', (req, res, next) => {
+    return getShopOrders(req, res, next);
+});
+
+router.post('/markordershipped', (req, res, next) => {
+    return markOrderShipped(req, res, next);
+});
+
+router.post('/getproductsforvideoplacement', (req, res, next) => {
+    return getProductsForVideoPlacement(req, res, next);
+});
+
 router.get('/hello', (req, res, next) => {
     return res.json("Hey welcome to minishops")
 });
+
 
 module.exports = router;

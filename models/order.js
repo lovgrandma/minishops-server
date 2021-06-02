@@ -7,8 +7,8 @@ const s3Cred = require('../routes/api/s3credentials.js');
 // Basic user schema
 // Schema is an object that defines the structure of any documents that will be stored in your MongoDB collection; it enables you to define types and validators for all of your data items.
 const OrderSchema = new mongoose.Schema({
-    _id: { 
-        type: String, 
+    id: {
+        type: String,
         default: uuidv4(),
         required: true
     },
