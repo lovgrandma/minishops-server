@@ -14,12 +14,12 @@ const driver = neo4j.driver(s3Cred.neo.address, neo4j.auth.basic(s3Cred.neo.user
 
 const getSingleVideoPlacementData = async function(videoId) {
     let session = driver.session();
-    let query = "match (a:Video { id: $id}) return a";
-    let params = { id: videoId };
+    let query = "match (a:Video { mpd: $mpd}) return a";
+    let params = { mpd: videoId };
     return await session.run(query, params)
         .then((result) => {
-            if (result.records[0]._fields[0].properties.placement) {
-                return result.records[0]._fields[0].properties.placement;
+            if (result.records[0]._fields[0].properties.productPlacement) {
+                return result.records[0]._fields[0].properties.productPlacement;
             }
             return null;
         })
