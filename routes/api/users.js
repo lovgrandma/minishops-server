@@ -100,7 +100,7 @@ const checkValidShippingClass = async(username, product) => {
             }
             let shop = await ecommerce.getSingleShopById(product.shopId);
             let productData = await productHandler.getSingleProductById(product.id);
-            if (userShippingData.hasOwnProperty("country") && shop.hasOwnProperty("shippingClasses") && productData.hasOwnProperty("product")) {
+             if (userShippingData.hasOwnProperty("country") && shop.hasOwnProperty("shippingClasses") && productData.hasOwnProperty("product")) {
                 if (JSON.parse(shop.shippingClasses) && productData.product.hasOwnProperty("shipping")) {
                     let shippingClasses = JSON.parse(shop.shippingClasses);
                     for (let i = 0; i < shippingClasses.length; i++) {
@@ -200,16 +200,17 @@ const addOneProductAction = async(username, product, validDefaultShippingClass) 
                 .catch((err) => {
                     return false;
                 });
+                console.log(productDbRecord);
             if (productDbRecord.styles) {
                 let matchProductQuantity = null;
-                if (productDbRecord.length == 1 && productDbRecord.styles[0].options.length == 1) { // Only one product style and option, check this quantity
+                if (productDbRecord.styles.length == 1 && productDbRecord.styles[0].options.length == 1) { // Only one product style and option, check this quantity
                     matchProductQuantity = productDbRecord.styles[0].options[0].quantity;
                 } else {
                     for (let i = 0; i < productDbRecord.styles.length; i++) {
                         if (productDbRecord.styles[i].descriptor == product.style) { // If style matches, iterate through options
                             for (let j = 0; j < productDbRecord.styles[i].options.length; j++) {
                                 if (productDbRecord.styles[i].options[j].descriptor == product.option) { // We found the match for the product. Return quantity for comparison
-                                    matchProductQuantity = Number(productDbRecord.styles[i].options[j].quantity);
+                                     matchProductQuantity = Number(productDbRecord.styles[i].options[j].quantity);
                                 }
                             }
                         }
@@ -219,8 +220,8 @@ const addOneProductAction = async(username, product, validDefaultShippingClass) 
                     cart.items.push({
                         uuid: product.id,
                         quantity: 1,
-                        style: product.style,
-                        option: product.option,
+                        style: product.style ? product.style : "",
+                        option: product.option ? product.option : "",
                         shopId: product.shopId,
                         shippingClass: {
                             shippingRule: validDefaultShippingClass.shippingRule,
@@ -240,6 +241,7 @@ const addOneProductAction = async(username, product, validDefaultShippingClass) 
                 } else {
                     let match = false;
                     for (let i = 0; i < cart.items.length; i++) {
+                        console.log(cart.items[i], product);
                         // If id, style and option the same. It is definitively the same product.
                         if (cart.items[i].uuid == product.id && cart.items[i].style == product.style && cart.items[i].option == product.option) {
                             match = true;
@@ -263,6 +265,7 @@ const addOneProductAction = async(username, product, validDefaultShippingClass) 
                         }
                     }
                 }
+                console.log(cart, matchProductQuantity);
                 if (cart.items.length > 0) {
                     let session3 = driver.session();
                     query = "match (a:Person { name: $username }) set a.cart = $cart return a";
@@ -346,6 +349,7 @@ const addOneProductToUserCartDb = async(username, product) => {
                 }
             } else {
                 let completedCheckValidAddOne = await addOneProductAction(username, product, validDefaultShippingClass);
+                console.log(completedCheckValidAddOne);
                 if (completedCheckValidAddOne) {
                     if (completedCheckValidAddOne.hasOwnProperty("error")) {
                         return {

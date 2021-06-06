@@ -210,7 +210,7 @@ const addOneProductToCart = async(req, res, next) => {
     try {
         if (req.body.self && req.body.username && req.body.product) {
             let data = await users.addOneProductToUserCartDb(req.body.username, req.body.product);
-            if (data) {
+             if (data) {
                 if (data.error) {
                     return res.json({ data: data, error: data.error });
                 } else {
@@ -678,6 +678,5 @@ router.post('/getproductsforvideoplacement', (req, res, next) => {
 router.get('/hello', (req, res, next) => {
     return res.json("Hey welcome to minishops")
 });
-
 
 module.exports = router;
