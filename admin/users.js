@@ -40,6 +40,14 @@ const retrieveExpressVendorAcc = async function(username) {
                 }
             });
             let updatedUser = await User.findOneAndUpdate({ username: username}, { vendorPayment: account.id }, { new: true }).lean();
+            // Force make shop record for mongoDb here
+            // Find user owned shop on neo4j,
+            // get user shop id
+            // create new shop {
+            //         _id: String,
+            //         ordersPending: Array,
+            //         ordersComplete: Array
+            // }
             return updatedUser.vendorPayment;
         } else {
             return oldUser.vendorPayment; // Returns vendor account if existing

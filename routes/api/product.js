@@ -91,6 +91,55 @@ const getSingleProductById = async function(id, recommended = false, append = 0)
     }
 }
 
+const reduceQuantity = async function(productData) {
+    try {
+        let session = driver.session();
+        let query = "match (a:Product { id: $id }) return a";
+        let params = { id: productData.uuid };
+        return await session.run(query, params)
+            .then(async (result) => {
+                session.close();
+                if (result.records[0]._fields[0].properties.styles) {
+                    let stock = JSON.parse(result.records[0]._fields[0].properties.styles);
+                    if (stock.length > 1 || stock.length == 1 && stock[0].options.length > 1) {
+                        for (let i = 0; i < stock.length; i++) {
+                            if (stock[i].descriptor == productData.style) {
+                                for (let j = 0; j < stock[i].options.length; j++) {
+                                    if (stock[i].options[j].descriptor == productData.option) {
+                                        stock[i].options[j].quantity = Number(stock[i].options[j].quantity) - Number(productData.quantity);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        stock[0].options[0].quantity = Number(stock[0].options[0].quantity) - Number(productData.quantity);
+                    }
+                    let updatedStock = JSON.stringify(stock);
+                    let session2 = driver.session();
+                    query = "match (a:Product { id: $id }) set a.styles = $stock return a";
+                    params.stock = updatedStock;
+                    return await session2.run(query, params)
+                        .then((result) => {
+                            session2.close();
+                            return true;
+                        })
+                        .catch((err) => {
+                            console.log(err);
+                            return false;
+                        });
+                }
+            })
+            .catch((err) => {
+                console.log(err);
+                return false;
+            });
+    } catch (err) {
+        console.log(err);
+        return false;
+    }
+}
+
 module.exports = {
-    getSingleProductById: getSingleProductById
+    getSingleProductById: getSingleProductById,
+    reduceQuantity: reduceQuantity
 }

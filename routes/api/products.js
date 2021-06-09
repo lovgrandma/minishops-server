@@ -291,11 +291,85 @@ const resolveNewLocalImages = async function(files, newImgData) {
             i++;
         });
     });
-    return Promise.all(uploadS3All)
+    return await Promise.all(uploadS3All)
         .then((result) => {
             return result;
-        })
+        });
 };
+
+/**
+ * Will delete all images user marked for deletion.
+ * NOTE: Sometimes isn't updating for some reason. Some browser sessions load product without deleted images some erroneously still have images erroneously there. 
+ * Final query will show record as updated but on database images on product dont show as deleted. Very strange caching error
+ * @param {Object} product 
+ * @param {Array} deletions 
+ * @returns 
+ */
+const resolveProductImgDeletions = async function(productData, deletions) {
+    try {
+        if (deletions) {
+            try {
+                if (JSON.parse(deletions)) {
+                    deletions = JSON.parse(deletions);
+                }
+            } catch (err) {
+                // Fail silently, didn't need to parse deletions
+            }
+            const deleteAllFromS3 = deletions.map(file => {
+                return new Promise((resolve, reject) => {
+                    try {
+                        resolve(s3Upload.deleteSingle(file, "minifs-shops-thumbnails"));
+                    } catch (err) {
+                        reject(null);
+                    }
+                });
+            });
+            let deleted = await Promise.all(deleteAllFromS3)
+                .then((result) => {
+                    return result;
+                });
+            deleted = deleted.filter((a) => a ? a : null);
+            let session = driver.session();
+            let query = "match (a:Product { id: $id }) return a";
+            let params = { id: productData.id };
+            return await session.run(query, params)
+                .then( async (result) => {
+                    session.close();
+                    if (result.records[0]._fields[0].properties) {
+                        let tempImg = Array.from(JSON.parse(result.records[0]._fields[0].properties.images));
+                        let deletedRecords = [];
+                        for (let i = 0; i < tempImg.length; i++) {
+                            if (deleted.indexOf(tempImg[i].url) > -1) {
+                                let tempDeleted = tempImg.splice(i, 1);
+                                deletedRecords.push(tempDeleted[0].url);
+                                i--;
+                            }
+                        }
+                        const newImgData = JSON.stringify(tempImg);
+                        query = "match (a:Product { id: $id }) set a.images = $images return a";
+                        params.images = newImgData;
+                        let session2 = driver.session();
+                        let data = await session2.run(query, params)
+                            .then((result) => {
+                                session2.close();
+                                return deletedRecords;
+                            })
+                            .catch((err) => {
+                                return [];
+                            })
+                        return data;
+                    }
+                })
+                .catch((err) => {
+                    return [];
+                })
+        } else {
+            return [];
+        }
+    } catch (err) {
+        return [];
+    }
+}
 
 /**
  * Will save or overwrite a product in the database. If id is missing then it will make new, else merge to existing 
@@ -305,13 +379,26 @@ const resolveNewLocalImages = async function(files, newImgData) {
  * @param {Object} product 
  * @returns {Boolean} Completed or failed
  */
-const saveSingleProductToShop = async function(owner, username, product, files, newImgData) {
+const saveSingleProductToShop = async function(owner, username, productData, files, newImgData, deletions) {
     try {
         let data;
-        let validProduct = validateProduct(product);
+        let validProduct = validateProduct(productData);
         let newImages = await resolveNewLocalImages(files, newImgData);
         newImages = newImages.filter(img => img != false); // Remove any entities that did not process correctly
         validProduct.images = validProduct.images.concat(newImages);
+        let deletedImages = await resolveProductImgDeletions(productData, deletions);
+        // This will remove the deleted images from the array of images to be published on the image update
+        try {
+            if (deletedImages) {
+                for (i = 0; i < validProduct.images.length; i++) {
+                    if (deletedImages.indexOf(validProduct.images[i].url) > -1) {
+                        validProduct.images.splice(i, 1);
+                    }
+                }
+            }
+        } catch (err) {
+            // No deleted images
+        }
         // Check for existing uuid from random generated
         let id;
         if (!validProduct.id) {
@@ -348,6 +435,7 @@ const saveSingleProductToShop = async function(owner, username, product, files, 
             return false;
         }
     } catch (err) {
+        console.log(err);
         return false;
     }
 }

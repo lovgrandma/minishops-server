@@ -183,8 +183,7 @@ const moveOrderCompleted = async function(shopId, orderId) {
         let shopData = await Shop.findOne({ _id: shopId }).lean();
         let orderIndex = shopData.ordersPending.map(function(o) { return o.orderId}).indexOf(orderId);
         let tempOrder = shopData.ordersPending[orderIndex];
-        console.log(tempOrder, orderIndex);
-        let updated = await Shop.updateOne({ _id: shopId }, 
+         let updated = await Shop.updateOne({ _id: shopId }, 
             { $pull: { ordersPending: { orderId: orderId }}, 
             $push: { ordersComplete: tempOrder }}
         ).lean();

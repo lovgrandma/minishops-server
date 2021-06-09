@@ -127,7 +127,11 @@ const saveSingleProduct = async(req, res, next) => {
         }
         if (req.body) {
             if (req.body.self && req.body.owner && req.body.username && req.body.hash && req.body.product) {
-                let data = await products.saveSingleProductToShop(req.body.owner, req.body.username, JSON.parse(req.body.product), files, imgNames);
+                let deletions = null;
+                if (req.body.deletions) {
+                    deletions = req.body.deletions;
+                }
+                let data = await products.saveSingleProductToShop(req.body.owner, req.body.username, JSON.parse(req.body.product), files, imgNames, deletions);
                 return res.json({ data: data });
             } else {
                 return res.json({ error: "Save single product failed", action: null });
@@ -404,7 +408,15 @@ const processCompleteCheckout = async(req, res, next) => {
                                         }
                                         return await bookKeeping.associateOrderWithShop(shop.id, orderObject);
                                     });
-                                    let shopOrderAssociations = await Promise.all(promises); // Will save each order on shop records in mongoDb
+                                    let shopOrderAssociations = await Promise.all(promises); // Will save each order on shop records in mongoDb. Turn this into a job queue for idempotency
+                                    let resolveQuantity = orderRecord.cart.map(async item => {
+                                        try {
+                                            return product.reduceQuantity(item);
+                                        } catch (err) {
+                                            return false;
+                                        }
+                                    });
+                                    let adjustedQuantities = await Promise.all(resolveQuantity);
                                     let emptiedUserCart = await cart.emptySingleUserCart(req.body.username);
                                     return res.json({
                                         orderRecord: orderRecord,

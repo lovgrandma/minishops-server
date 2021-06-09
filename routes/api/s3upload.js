@@ -66,6 +66,31 @@ const uploadSingle = async (file, name = "", bucket, prefix = "") => {
     }
 }
 
+const deleteSingle = async (ref, bucket) => {
+    try {
+        return new Promise( async (resolve, reject) => {
+            let orig = null;
+            try {
+                orig = await s3.getObject({ Bucket: bucket, Key: ref }).promise();
+            } catch (err) {
+                // Fail silently no match
+            }
+            if (orig) {
+                await s3.deleteObject({ Bucket: bucket, Key: ref }, (err, data) => {
+                    if (err) {
+                        reject(false); // Image deletion errored out
+                    }
+                    resolve(ref); // Image deleted
+                });
+            } else {
+                resolve(ref); // Image was already deleted just return truthiness that its gone
+            }
+        });
+    } catch (err) {
+        return false;
+    }
+}
+
 /**
 * *** New Package "sharp". Image transforming library. Not sure of stability. Use try catch to prevent failure ***
 * Compresses an image into jpeg format, deletes old and returns new
@@ -94,5 +119,6 @@ const compressImg = async(path, ext) => {
 }
 
 module.exports = {
-    uploadSingle: uploadSingle
+    uploadSingle: uploadSingle,
+    deleteSingle: deleteSingle
 }

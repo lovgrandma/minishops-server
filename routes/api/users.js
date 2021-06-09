@@ -392,7 +392,7 @@ const updateSingleItemQuantity = function(result, item) {
     try {
         if (result.records[0]._fields[0].properties.styles) { // Should throw err if no match and reject false
             let styles = JSON.parse(result.records[0]._fields[0].properties.styles);
-            if (styles.length > 1) {
+            if (styles.length > 1 || styles.length == 1 && styles[0].options.length > 1) {
                 for (let i = 0; i < styles.length; i++) {
                     if (styles[i].descriptor == item.product.style) {
                         for (let j = 0; j < styles[i].options.length; j++) {
