@@ -52,6 +52,7 @@ const getSingleOrder = async function(orderId, username) {
     try {
         let customer = await User.findOne({ username: username }).lean();
         if (customer.payment) {
+            console.log(mongoose.connection);
             let orderData = await Order.findOne({ id: orderId, customerId: customer.payment }).lean(); // Only get order if belonging to passed user
             if (orderData) {
                 orderData.orderInfo = await getCompletion(orderData.cart, orderId);
