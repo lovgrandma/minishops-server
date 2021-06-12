@@ -72,7 +72,9 @@ const getSingleOrder = async function(orderId, username) {
 
 const getAllUserOrders = async function(username) {
     try {
+        console.log({username});
         const userData = await User.findOne({ username: username }).lean(); // get username cus
+        console.log({userData});
         if (userData) {
             if (userData.payment) {
                 return await Order.find({ customerId: userData.payment }).lean(); // get all orders in mongodb with matching cus id
