@@ -118,6 +118,7 @@ const saveSingleProduct = async(req, res, next) => {
             files = req.files;
         }
         let imgNames = [];
+        console.log(req.body.imgNames);
         try {
             if (req.body.imgNames) {
                 imgNames = JSON.parse(req.body.imgNames);
