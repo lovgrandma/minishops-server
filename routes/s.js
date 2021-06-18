@@ -113,6 +113,7 @@ const getShippingClasses = async(req, res, next) => {
 
 const saveSingleProduct = async(req, res, next) => {
     try {
+        console.log(req.body);
         let files = null;
         if (req.files) { // Resolve files if files incoming
             files = req.files;
