@@ -125,6 +125,7 @@ const saveSingleProduct = async(req, res, next) => {
         } catch (err) {
             imgNames = [];
         }
+        console.log(imgNames);
         if (req.body) {
             if (req.body.self && req.body.owner && req.body.username && req.body.hash && req.body.product) {
                 let deletions = null;
