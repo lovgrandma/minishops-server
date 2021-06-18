@@ -284,6 +284,7 @@ const resolveNewLocalImages = async function(files, newImgData) {
     const uploadS3All = files.map(file => {
         return new Promise((resolve, reject) => {
             try {
+                console.log(newImgData[i]);
                 resolve(s3Upload.uploadSingle(file, newImgData[i], "minifs-shops-thumbnails", "sh/")); // Will send he file location locally and the name included
             } catch (err) {
                 reject(null);
