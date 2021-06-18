@@ -55,6 +55,7 @@ if (process.env.dev) {
     server = require('https').createServer(options, app);  // Set to https to force https connections to api
 }
 const shops = require('./routes/s');
+const admin = require('./routes/a');
 const { resolveLogging } = require('./scripts/logging.js');
 const s3Cred = require('./routes/api/s3credentials.js');
 const security = require('./routes/security.js');
@@ -141,6 +142,7 @@ app.use(async function(req, res, next) {
 });
 
 app.use('/s/', shops);
+app.use('/a/', admin);
 
 ////// Catch all 404, forward to error handler. 
 app.use(function(err, req, res, next) {
