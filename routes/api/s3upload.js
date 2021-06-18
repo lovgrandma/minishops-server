@@ -24,7 +24,7 @@ async function doImgDeletion(thumbFile) {
  * @param {String} name 
  * @returns {False || Object}
  */
-const uploadSingle = async (file, name = "", bucket, prefix = "") => {
+const uploadSingle = async (file, name = "", bucket, prefix = "", buffer = false) => {
     try {
         let checkExistingObject = null;
         let generatedUuid;
@@ -44,7 +44,7 @@ const uploadSingle = async (file, name = "", bucket, prefix = "") => {
             i++;
         } while (i < 3);
         if (generatedUuid) {
-            let compressedImg = await compressImg(file.path, ext);
+            let compressedImg = await compressImg(file.path, ext, buffer);
             let data = fs.createReadStream(compressedImg);
             uploadData = await s3.upload({ Bucket: bucket, Key: prefix + generatedUuid + "." + ext, Body: data }).promise();
             doImgDeletion(file.path); // Delete origin file
@@ -98,14 +98,14 @@ const deleteSingle = async (ref, bucket) => {
 * @arg {path} takes path of image to be converted
 * @returns {jpeg} new compressed, resized image or false
 */
-const compressImg = async(path, ext) => {
+const compressImg = async(path, ext, buffer = false) => {
     try {
         if (path.match(/\\([a-zA-Z0-9].*)\./)) {
             let newLoc = "temp\\" + path.match(/\\([a-zA-Z0-9].*)\./)[1] + "-c." + ext;
             return new Promise((resolve, reject) => {
                 sharp(path)
                     .resize(500, 785)
-                    .jpeg({ quality: 90 })
+                    .png({ quality: 90 })
                     .toFile(newLoc)
                     .then((data) => { resolve(newLoc);  })
                     .catch((err) => { console.log(err); doImgDeletion(newLoc); reject(false) });

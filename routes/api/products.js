@@ -282,10 +282,10 @@ const mergeExistingProduct = async function(product, owner) {
 const resolveNewLocalImages = async function(files, newImgData) {
     let i = 0;
     const uploadS3All = files.map(file => {
+        console.log(file);
         return new Promise((resolve, reject) => {
             try {
-                console.log(newImgData[i]);
-                resolve(s3Upload.uploadSingle(file, newImgData[i], "minifs-shops-thumbnails", "sh/")); // Will send he file location locally and the name included
+                resolve(s3Upload.uploadSingle(file, newImgData[i], "minifs-shops-thumbnails", "sh/", true)); // Will send he file location locally and the name included
             } catch (err) {
                 reject(null);
             }
@@ -294,7 +294,7 @@ const resolveNewLocalImages = async function(files, newImgData) {
     });
     return await Promise.all(uploadS3All)
         .then((result) => {
-            return result;
+             return result;
         });
 };
 
@@ -385,6 +385,7 @@ const saveSingleProductToShop = async function(owner, username, productData, fil
         let data;
         let validProduct = validateProduct(productData);
         let newImages = await resolveNewLocalImages(files, newImgData);
+        console.log(newImages);
         newImages = newImages.filter(img => img != false); // Remove any entities that did not process correctly
         validProduct.images = validProduct.images.concat(newImages);
         let deletedImages = await resolveProductImgDeletions(productData, deletions);

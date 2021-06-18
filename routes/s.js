@@ -118,7 +118,6 @@ const saveSingleProduct = async(req, res, next) => {
             files = req.files;
         }
         let imgNames = [];
-        console.log(req.body.imgNames);
         try {
             if (req.body.imgNames) {
                 imgNames = JSON.parse(req.body.imgNames);
@@ -126,7 +125,6 @@ const saveSingleProduct = async(req, res, next) => {
         } catch (err) {
             imgNames = [];
         }
-        console.log(imgNames);
         if (req.body) {
             if (req.body.self && req.body.owner && req.body.username && req.body.hash && req.body.product) {
                 let deletions = null;
