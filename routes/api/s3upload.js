@@ -100,8 +100,8 @@ const deleteSingle = async (ref, bucket) => {
 */
 const compressImg = async(path, ext, buffer = false) => {
     try {
-        if (path.match(/\\([a-zA-Z0-9].*)\./)) {
-            let newLoc = "temp\\" + path.match(/\\([a-zA-Z0-9].*)\./)[1] + "-c." + ext;
+        if (path.match(/(\\|\/)([a-zA-Z0-9].*)\./)) {
+            let newLoc = "temp\\" + path.match(/(\\|\/)([a-zA-Z0-9].*)\./)[2] + "-c." + ext;
             return new Promise((resolve, reject) => {
                 sharp(path)
                     .resize(500, 785)
