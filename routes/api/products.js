@@ -994,9 +994,63 @@ const changeShippingClass = async(username, productData, newShippingRule) => {
     }
 }
 
+
+/**
+ * Later on we can use "Auth" for other authorized users able to edit the shop
+ * @param {*} owner 
+ * @param {*} id 
+ * @param {*} auth 
+ * @returns 
+ */
+const archiveSingleProduct = async function(owner, productId, auth) {
+    try {
+        let session = driver.session();
+        let query = "match (a:Person { name: $username})-[r:OWNS]-(b:Shop)-[r2:STOCKS]-(c:Product { id: $productId}) return c";
+        let params = { username: owner, productId: productId };
+        return await session.run(query, params)
+            .then(async (result) => {
+                session.close();
+                if (result.records[0]._fields[0].properties.images) {
+                    let im = JSON.parse(result.records[0]._fields[0].properties.images);
+                    let promises = im.map(img => {
+                        return new Promise((resolve, reject) => {
+                            try {
+                                resolve(s3Upload.deleteSingle(img.url, "minifs-shops-thumbnails"));
+                            } catch (err) {
+                                console.log(err);
+                                reject(false);
+                            }
+                        });
+                    });
+                    let dat = await Promise.all(promises);
+                    let session2 = driver.session();
+                    query = "match (a:Product { id: $productId }) set a:aProduct remove a:Product return a";
+                    session2.run(query, params)
+                        .then((result) => {
+                            return true;
+                        })
+                        .catch((err) => {
+                            console.log(err);
+                            return false;
+                        })
+                }
+                // do promise, iterate through images, delete all.
+                // Then do another query, turn to archive
+            })
+            .catch((err) => {
+                console.log(err);
+                return false;
+            })
+    } catch (err) {
+        console.log(err);
+        return false;
+    }
+}
+
 module.exports = {
     getShopDbProducts: getShopDbProducts,
     saveSingleProductToShop: saveSingleProductToShop,
     getImagesAndTitlesForCartProductsDb: getImagesAndTitlesForCartProductsDb,
-    changeShippingClass: changeShippingClass
+    changeShippingClass: changeShippingClass,
+    archiveSingleProduct: archiveSingleProduct
 }

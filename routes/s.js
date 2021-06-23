@@ -113,7 +113,6 @@ const getShippingClasses = async(req, res, next) => {
 
 const saveSingleProduct = async(req, res, next) => {
     try {
-        console.log(req.body);
         let files = null;
         if (req.files) { // Resolve files if files incoming
             files = req.files;
@@ -133,7 +132,7 @@ const saveSingleProduct = async(req, res, next) => {
                     deletions = req.body.deletions;
                 }
                 let data = await products.saveSingleProductToShop(req.body.owner, req.body.username, JSON.parse(req.body.product), files, imgNames, deletions);
-                return res.json({ data: data });
+                return res.json({ data: data, action: "reload" });
             } else {
                 return res.json({ error: "Save single product failed", action: null });
             }
@@ -142,6 +141,31 @@ const saveSingleProduct = async(req, res, next) => {
         }
     } catch (err) {
         return res.json({ error: "Save single product failed", action: null });
+    }
+}
+
+const archiveSingleProduct = async(req, res, next) => {
+    try {
+        // Delete all images on neo4j record
+        // Turn neo4j record into aProduct (meaning archived product)
+        if (req.body) {
+            if (req.body.self && req.body.username && req.body.owner && req.body.hash && req.body.productId) {
+                let deletedImgs = await products.archiveSingleProduct(req.body.owner, req.body.productId, req.body.username);
+                console.log(deletedImgs);
+                if (!deletedImgs) {
+                    throw new Error;
+                } else {
+                    return res.json({ data: deletedImgs, action: "reload" });
+                }
+            } else {
+                throw new Error;
+            }
+        } else {
+            throw new Error;
+        }
+    } catch (err) {
+        console.log(err);
+        return res.json({ error: "Delete single product failed", action: null });
     }
 }
 
@@ -622,6 +646,10 @@ const getProductsForVideoPlacement = async(req, res, next) => {
 
 router.post('/savesingleproducttoshop', uploadSpace.array('image', 10), (req, res, next) => {
     return saveSingleProduct(req, res, next);
+});
+
+router.post('/archivesingleproductfromshop', (req, res, next) => {
+    return archiveSingleProduct(req, res, next); // Must archive products instead of deleting
 });
 
 router.post('/getshippingclasses', (req, res, next) => {

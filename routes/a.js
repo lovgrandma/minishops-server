@@ -30,7 +30,7 @@ router.post('/buildshop', async (req, res, next) => {
             let id = req.body.id ? req.body.id : null;
             let name = req.body.shop;
             let owner = req.body.owner;
-            let description = req.body.description ? req.body.description : null;
+            let description = req.body.description ? req.body.description : "";
             let createdShop = await admin.buildAShop(id, name, owner, description, null, null);
             return res.json(createdShop);
         } else {
