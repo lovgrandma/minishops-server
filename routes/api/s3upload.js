@@ -73,11 +73,14 @@ const deleteSingle = async (ref, bucket) => {
             try {
                 orig = await s3.getObject({ Bucket: bucket, Key: ref }).promise();
             } catch (err) {
+                console.log(err);
                 // Fail silently no match
             }
+            console.log(orig);
             if (orig) {
                 await s3.deleteObject({ Bucket: bucket, Key: ref }, (err, data) => {
                     if (err) {
+                        console.log(err);
                         reject(false); // Image deletion errored out
                     }
                     resolve(ref); // Image deleted
@@ -87,6 +90,7 @@ const deleteSingle = async (ref, bucket) => {
             }
         });
     } catch (err) {
+        console.log(err);
         return false;
     }
 }

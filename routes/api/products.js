@@ -1023,10 +1023,12 @@ const archiveSingleProduct = async function(owner, productId, auth) {
                         });
                     });
                     let dat = await Promise.all(promises);
+                    console.log(dat);
                     let session2 = driver.session();
                     query = "match (a:Product { id: $productId }) set a:aProduct remove a:Product return a";
-                    session2.run(query, params)
+                    return await session2.run(query, params)
                         .then((result) => {
+                            console.log(result.records);
                             return true;
                         })
                         .catch((err) => {
