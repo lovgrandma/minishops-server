@@ -46,13 +46,20 @@ const uploadSingle = async (file, name = "", bucket, prefix = "", buffer = false
         if (generatedUuid) {
             let compressedImg = await compressImg(file.path, ext, buffer);
             let data = fs.createReadStream(compressedImg);
+            let s = await sizeInMb(compressedImg);
+            if (s) {
+                if (typeof s == "number") {
+                    s = s.toFixed(2);
+                }
+            }
             uploadData = await s3.upload({ Bucket: bucket, Key: prefix + generatedUuid + "." + ext, Body: data }).promise();
             doImgDeletion(file.path); // Delete origin file
             if (uploadData) {
                 return doImgDeletion(compressedImg).then(() => { // Delete compressed image and return object values
                     return {
                         url: uploadData.Key,
-                        name: name
+                        name: name,
+                        size: s
                     }
                 })
             } else {
@@ -119,6 +126,16 @@ const compressImg = async(path, ext, buffer = false) => {
         }
     } catch (err) {
         return false;
+    }
+}
+
+const sizeInMb = async(file) => {
+    try {
+        var stats = fs.statSync(file);
+        var fileSizeInBytes = stats.size;
+        return fileSizeInBytes / (1024*1024);
+    } catch (err) {
+        return 0;
     }
 }
 

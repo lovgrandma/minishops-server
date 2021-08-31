@@ -61,9 +61,10 @@ const s3Cred = require('./routes/api/s3credentials.js');
 const security = require('./routes/security.js');
 
 const whitelist = [ 'https://www.minipost.app', 'https://minipost.app', 'www.minipost.app', 'minipost.app', 'http://localhost:3000' ];
+// Replace whitelist with a redis cache to store allowed origins
 app.use(cors({
     origin: function(origin, callback) {
-        if (whitelist.indexOf(origin) !== -1) { // Add function to filter through foreign whitelist origins 
+        if (whitelist.indexOf(origin) !== -1 || process.env.dev) { // Add function to filter through foreign whitelist origins 
             callback(null, true);
         } else {
             callback(new Error("Not allowed"));

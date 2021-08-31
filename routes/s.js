@@ -20,6 +20,7 @@ const bookKeeping = require('./api/bookkeeping.js');
 const cart = require('./api/cart.js');
 const orders = require('./api/orders.js');
 const placement = require('./api/placement.js');
+const bucket = require('./api/bucket.js');
 
 const uploadSpace = multer({
     storage: multer.diskStorage({
@@ -141,6 +142,20 @@ const saveSingleProduct = async(req, res, next) => {
         }
     } catch (err) {
         return res.json({ error: "Save single product failed", action: null });
+    }
+}
+
+const uploadBucketFile = async(req, res, next) => {
+    try {
+        if (req.file && req.body) {
+            let data = await bucket.addFile(req.body, req.file);
+            console.log(data);
+            return res.json({ data: data, action: null });
+        } else {
+            throw new Error;
+        }
+    } catch (err) {
+        return res.json({ data: null, error: "Save bucket file failed", action: null });
     }
 }
 
@@ -644,9 +659,32 @@ const getProductsForVideoPlacement = async(req, res, next) => {
     }
 }
 
+const getBucket = async(req, res, next) => {
+    try {
+        if (req.body.owner) {
+            let data = await bucket.getBucket(req.body.owner);
+            if (data) {
+                return res.json({
+                    data: data,
+                    error: null
+                })
+            } else {
+                throw new Error;
+            }
+        }
+    } catch (err) {
+        return res.json({
+            data: null,
+            error: "failed to get bucket data"
+        })
+    }
+}
+
 router.post('/savesingleproducttoshop', uploadSpace.array('image', 10), (req, res, next) => {
     return saveSingleProduct(req, res, next);
 });
+
+
 
 router.post('/archivesingleproductfromshop', (req, res, next) => {
     return archiveSingleProduct(req, res, next); // Must archive products instead of deleting
@@ -718,6 +756,25 @@ router.post('/getproductsforvideoplacement', (req, res, next) => {
 
 router.get('/hello', (req, res, next) => {
     return res.json("Hey welcome to minishops")
+});
+
+router.get('/getembed', (req, res, next) => {
+    console.log(req.query);
+    // get video data from neo4j 
+    // Respond with shaka script
+    // <script src="https://ajax.googleapis.com/ajax/libs/shaka-player/3.2.0/shaka-player.ui.js"></script> load this on front end where script was called.
+    // Attempt load shaka with video data
+    // Direct to Minipost for purchase by default on product click
+    // use interval to maintain state
+
+});
+
+router.post('/getbucket', (req, res, next) => {
+    return getBucket(req, res, next);
+});
+
+router.post('/uploadbucketfile', uploadSpace.single('image'), (req, res, next) => {
+    return uploadBucketFile(req, res, next);
 });
 
 module.exports = router;
