@@ -56,7 +56,7 @@ async function addFile(body, file) {
                     let rawName = file.filename.match(/\.([a-zA-Z0-9]*)$/)[0];
                     let loc = await s3Upload.uploadSingle(file, rawName, "minifs-vendor-repos1", "repo/", null);
                     if (loc) {
-                        bucket.push({url: loc.url, size: loc.size});
+                        bucket.push({url: loc.url, size: loc.size, status: "waiting" });
                         bucket = JSON.stringify(bucket);
                         let session3 = driver.session();
                         query = "match (a:Person { name: $name})-[r:OWNS]-(b:Bucket) set b.files = $files return b";
