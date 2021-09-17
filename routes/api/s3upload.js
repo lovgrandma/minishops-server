@@ -83,7 +83,6 @@ const deleteSingle = async (ref, bucket) => {
                 console.log(err);
                 // Fail silently no match
             }
-            console.log(orig);
             if (orig) {
                 await s3.deleteObject({ Bucket: bucket, Key: ref }, (err, data) => {
                     if (err) {

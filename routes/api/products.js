@@ -40,9 +40,27 @@ const getShopDbProducts = async function(owner, filter = null, append = 0, noApp
                             if (record._fields) {
                                 if (record._fields[0]) {
                                     if (record._fields[0].properties) {
-                                        record._fields[0].properties.styles = JSON.parse(record._fields[0].properties.styles);
+                                        if (record._fields[0].properties.styles) {
+                                            console.log(record._fields[0].properties);
+                                            if (JSON.parse(record._fields[0].properties.styles)) {
+                                                record._fields[0].properties.styles = JSON.parse(record._fields[0].properties.styles);
+                                            }
+                                        }
                                         try {
-                                            record._fields[0].properties.images = JSON.parse(record._fields[0].properties.images); // Use try catch as record may not have images field, but it should
+                                            if (record._fields[0].properties.files) {
+                                                if (!Array.isArray(record._fields[0].properties.files)) {
+                                                    if (JSON.parse(record._fields[0].properties.files)) {
+                                                        record._fields[0].properties.files = JSON.parse(record._fields[0].properties.files);
+                                                    }
+                                                }
+                                            }
+                                        } catch (err) {
+                                            // fail silently
+                                        }
+                                        try {
+                                            if (JSON.parse(record._fields[0].properties.images)) {
+                                                record._fields[0].properties.images = JSON.parse(record._fields[0].properties.images); // Use try catch as record may not have images field, but it should
+                                            }
                                         } catch (err) {
                                             // fail silently
                                         }
@@ -56,12 +74,13 @@ const getShopDbProducts = async function(owner, filter = null, append = 0, noApp
                                 }
                             }
                         })
-                        return products;
+                         return products;
                     }
                 }
                 return [];
             });
     } catch (err) {
+        console.log(err);
         return [];
     }
 }
@@ -152,7 +171,7 @@ const validateProduct = function(product) {
                                 if (product.styles[i].options[j].descriptor.length < 1) {
                                     return false;
                                 }
-                                if (typeof product.styles[i].options[j].price !== "number") {
+                                if (typeof product.styles[i].options[j].price !== "number" && product.infinite != true) {
                                     return false;
                                 }
                             } else {
@@ -178,7 +197,19 @@ const validateProduct = function(product) {
                 })
             }
             validProduct.styles = validStyles;
-            if (product.shipping.length < 1) {
+            let ty = "physical";
+            if (product.protype) {
+                if (product.protype == "virtual") {
+                    ty = "virtual";
+                }
+            }
+            validProduct.infinite = false;
+            if (product.hasOwnProperty("infinite")) {
+                validProduct.infinite = true;
+            }
+            validProduct.protype = ty;
+            validProduct.files = product.files ? product.files : null;
+            if (product.shipping.length < 1 && ty == "physical") {
                 return false;
             }
             for (let i = 0; i < product.shipping.length; i++) {
@@ -212,7 +243,7 @@ const validateProduct = function(product) {
 const createNewProduct = async function(product, owner) {
     try {
         let session = driver.session();
-        let query = "match (a:Person {name: $owner})-[r:OWNS]-(b:Shop) with b create (b)-[r:STOCKS]->(c:Product { id: $id, name: $name, description: $description, styles: $styles, shipping: $shipping, images: $images, published: $published}) return c"; // Match product by unique product id
+        let query = "match (a:Person {name: $owner})-[r:OWNS]-(b:Shop) with b create (b)-[r:STOCKS]->(c:Product { id: $id, name: $name, description: $description, styles: $styles, shipping: $shipping, images: $images, published: $published, type: $type, infinite: $infinite, files: $files }) return c"; // Match product by unique product id
         let id = product.id;
         let name = product.name;
         let description = product.description;
@@ -220,7 +251,15 @@ const createNewProduct = async function(product, owner) {
         let shipping = product.shipping;
         let published = product.published;
         let images = JSON.stringify(product.images);
-        let params = { id: id, owner: owner, name: name, description: description, styles: styles, shipping: shipping, images: images, published: published };
+        let protype = product.protype ? product.protype == "virtual" ? "virtual" : "physical" : "physical";
+        let infinite = product.infinite ? true : false; // Avoid passing undefined
+        let files = [];
+        if (protype == "virtual") {
+            if (product.files) {
+                files = JSON.stringify(product.files);
+            }
+        }
+        let params = { id: id, owner: owner, name: name, description: description, styles: styles, shipping: shipping, images: images, published: published, type: protype, infinite: infinite, files: files };
         return await session.run(query, params)
             .then(async function(result) {
                 session.close();
@@ -250,7 +289,7 @@ const createNewProduct = async function(product, owner) {
 const mergeExistingProduct = async function(product, owner) {
     try {
         let session = driver.session();
-        let query = "match (a:Person {name: $owner})-[r:OWNS]-(b:Shop)-[r2:STOCKS]-(c:Product {id: $id}) with c set c = { id: $id, name: $name, description: $description, styles: $styles, shipping: $shipping, images: $images, published: $published} return c";
+        let query = "match (a:Person {name: $owner})-[r:OWNS]-(b:Shop)-[r2:STOCKS]-(c:Product {id: $id}) with c set c = { id: $id, name: $name, description: $description, styles: $styles, shipping: $shipping, images: $images, published: $published, type: $type, infinite: $infinite, files: $files } return c";
         let id = product.id;
         let name = product.name;
         let description = product.description;
@@ -258,7 +297,15 @@ const mergeExistingProduct = async function(product, owner) {
         let shipping = product.shipping;
         let published = product.published;
         let images = JSON.stringify(product.images);
-        let params = { id: id, owner: owner, name: name, description: description, styles: styles, shipping: shipping, images: images, published: published };
+        let protype = product.protype ? product.protype == "virtual" ? "virtual" : "physical" : "physical";
+        let infinite = product.infinite ? true : false; // Avoid passing undefined
+        let files = [];
+        if (protype == "virtual") {
+            if (product.files) {
+                files = JSON.stringify(product.files);
+            }
+        }
+        let params = { id: id, owner: owner, name: name, description: description, styles: styles, shipping: shipping, images: images, published: published, type: protype, infinite: infinite, files: files };
         return await session.run(query, params)
             .then(async function(result) {
                 session.close();
@@ -308,6 +355,7 @@ const resolveNewLocalImages = async function(files, newImgData) {
  */
 const resolveProductImgDeletions = async function(productData, deletions) {
     try {
+        console.log(deletions);
         if (deletions) {
             try {
                 if (JSON.parse(deletions)) {
@@ -319,6 +367,7 @@ const resolveProductImgDeletions = async function(productData, deletions) {
             const deleteAllFromS3 = deletions.map(file => {
                 return new Promise((resolve, reject) => {
                     try {
+                        console.log(file);
                         resolve(s3Upload.deleteSingle(file, "minifs-shops-thumbnails"));
                     } catch (err) {
                         reject(null);
@@ -346,6 +395,7 @@ const resolveProductImgDeletions = async function(productData, deletions) {
                                 i--;
                             }
                         }
+                        console.log(tempImg);
                         const newImgData = JSON.stringify(tempImg);
                         query = "match (a:Product { id: $id }) set a.images = $images return a";
                         params.images = newImgData;
@@ -385,7 +435,6 @@ const saveSingleProductToShop = async function(owner, username, productData, fil
         let data;
         let validProduct = validateProduct(productData);
         let newImages = await resolveNewLocalImages(files, newImgData);
-        console.log(newImages);
         newImages = newImages.filter(img => img != false); // Remove any entities that did not process correctly
         validProduct.images = validProduct.images.concat(newImages);
         let deletedImages = await resolveProductImgDeletions(productData, deletions);

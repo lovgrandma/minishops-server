@@ -684,8 +684,6 @@ router.post('/savesingleproducttoshop', uploadSpace.array('image', 10), (req, re
     return saveSingleProduct(req, res, next);
 });
 
-
-
 router.post('/archivesingleproductfromshop', (req, res, next) => {
     return archiveSingleProduct(req, res, next); // Must archive products instead of deleting
 });
