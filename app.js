@@ -39,9 +39,9 @@ const assert = require('assert');
 const path = require('path');
 const app = express();
 const cors = require('cors');
-const privateKey = fs.readFileSync('../live/minipost-server-key.key');
-const certificate = fs.readFileSync('../live/minipost-server-certificate.crt');
-const bundle = fs.readFileSync('../live/minipost-server-bundle.ca-bundle');
+const privateKey = fs.readFileSync('../ssl/live/minipost-server-key.key');
+const certificate = fs.readFileSync('../ssl/live/minipost-server-certificate.crt');
+const bundle = fs.readFileSync('../ssl/live/minipost-server-bundle.ca-bundle');
 const options = {
     key: privateKey,
     cert: certificate,
