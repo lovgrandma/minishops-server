@@ -60,7 +60,7 @@ const { resolveLogging } = require('./scripts/logging.js');
 const s3Cred = require('./routes/api/s3credentials.js');
 const security = require('./routes/security.js');
 
-const whitelist = [ 'https://www.minipost.app', 'https://minipost.app', 'www.minipost.app', 'minipost.app', 'http://localhost:3000' ];
+const whitelist = [ 'https://www.minipost.app', 'https://minipost.app', 'www.minipost.app', 'minipost.app', 'http://localhost:3000', 'https://www.minipost.link', 'https://minipost.link', 'www.minipost.link', 'minipost.link' ];
 // Replace whitelist with a redis cache to store allowed origins
 app.use(cors({
     origin: function(origin, callback) {
